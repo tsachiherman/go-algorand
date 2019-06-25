@@ -17,7 +17,10 @@
 package rpcs
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -34,11 +37,19 @@ import (
 	"github.com/algorand/go-algorand/protocol"
 )
 
-const ledgerResponseContentType = "application/x-algorand-block-v1"
+const ledgerResponseContentTypeV1 = "application/x-algorand-block-v1"
+const ledgerResponseContentTypeV2 = "application/x-algorand-block-v2"
+const ledgerResponseContentTypeLatest = ledgerResponseContentTypeV2
 const ledgerResponseHasBlockCacheControl = "public, max-age=31536000, immutable"    // 31536000 seconds are one year.
 const ledgerResponseMissingBlockCacheControl = "public, max-age=1, must-revalidate" // cache for 1 second, and force revalidation afterward
 const ledgerServerMaxBodyLength = 512                                               // we don't really pass meaningful content here, so 512 bytes should be a safe limit
 const ledgerServerCatchupRequestBufferSize = 10
+
+// when adding new supported content-type, we want to add it to this list with a higher priority.
+var contentTypesPriority = map[string]int{
+	ledgerResponseContentTypeV1: 1,
+	ledgerResponseContentTypeV2: 2,
+}
 
 // LedgerService represents the Ledger RPC API
 type LedgerService struct {
@@ -52,6 +63,12 @@ type LedgerService struct {
 type EncodedBlockCert struct {
 	Block       bookkeeping.Block     `codec:"block"`
 	Certificate agreement.Certificate `codec:"cert"`
+}
+
+// EncodedBlockCertV2 defines how GetBlockBytes encodes a block and its certificate
+type EncodedBlockCertV2 struct {
+	Block       []byte `codec:"block"`
+	Certificate []byte `codec:"cert"`
 }
 
 // RegisterLedgerService creates a LedgerService around the provider Ledger and registers it for RPC with the provided Registrar
@@ -150,7 +167,10 @@ func (ls *LedgerService) ServeHTTP(response http.ResponseWriter, request *http.R
 		response.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	encodedBlockCert, err := ls.encodedBlockCert(round)
+
+	requestContentType := getRequestSupportedContentType(request.Header)
+
+	encodedBlockCert, err := ls.encodedBlockCert(round, requestContentType)
 	if err != nil {
 		switch err.(type) {
 		case ledger.ErrNoEntry:
@@ -166,7 +186,7 @@ func (ls *LedgerService) ServeHTTP(response http.ResponseWriter, request *http.R
 		}
 	}
 
-	response.Header().Set("Content-Type", ledgerResponseContentType)
+	response.Header().Set("Content-Type", requestContentType)
 	response.Header().Set("Content-Length", strconv.Itoa(len(encodedBlockCert)))
 	response.Header().Set("Cache-Control", ledgerResponseHasBlockCacheControl)
 	response.WriteHeader(http.StatusOK)
@@ -174,6 +194,30 @@ func (ls *LedgerService) ServeHTTP(response http.ResponseWriter, request *http.R
 	if err != nil {
 		logging.Base().Warn("http block write failed ", err)
 	}
+
+}
+
+// getRequestSupportedContentType figures out which content-type we should use, given the request's accept header.
+func getRequestSupportedContentType(requestHeaders http.Header) string {
+	accept := requestHeaders["Accept"]
+	//requestContentType := ledgerResponseContentTypeV1
+	if len(accept) == 0 {
+		// we have no accept header, just use V1.
+		return ledgerResponseContentTypeV1
+	}
+	bestContentTypePriority := -1
+	bestContentTypeValue := ""
+	// iterate on the list of supported client formats, trying to find the best match.
+	for _, v := range accept {
+		if priority, has := contentTypesPriority[v]; has && priority > bestContentTypePriority {
+			bestContentTypePriority = priority
+			bestContentTypeValue = v
+		}
+	}
+	if bestContentTypePriority == -1 {
+		return ledgerResponseContentTypeV1
+	}
+	return bestContentTypeValue
 }
 
 // WsGetBlockRequest is a msgpack message requesting a block
@@ -226,7 +270,7 @@ func (ls *LedgerService) handleCatchupReq(ctx context.Context, reqMsg network.In
 		return
 	}
 	res.Round = req.Round
-	encodedBlob, err := ls.encodedBlockCert(req.Round)
+	encodedBlob, err := ls.encodedBlockCert(req.Round, ledgerResponseContentTypeV1)
 	if err != nil {
 		res.Error = err.Error()
 		return
@@ -244,7 +288,18 @@ func (ls *LedgerService) sendCatchupRes(ctx context.Context, target network.Unic
 	}
 }
 
-func (ls *LedgerService) encodedBlockCert(round uint64) ([]byte, error) {
+func (ls *LedgerService) encodedBlockCert(round uint64, format string) ([]byte, error) {
+	switch format {
+	case ledgerResponseContentTypeV1:
+		return ls.encodedBlockCertV1(round)
+	case ledgerResponseContentTypeV2:
+		return ls.encodedBlockCertV2(round)
+	default:
+		return nil, fmt.Errorf("unexpected format '%s'", format)
+	}
+}
+
+func (ls *LedgerService) encodedBlockCertV1(round uint64) ([]byte, error) {
 	blk, cert, err := ls.ledger.BlockCert(basics.Round(round))
 	if err != nil {
 		return nil, err
@@ -253,4 +308,22 @@ func (ls *LedgerService) encodedBlockCert(round uint64) ([]byte, error) {
 		Block:       blk,
 		Certificate: cert,
 	}), nil
+}
+
+func (ls *LedgerService) encodedBlockCertV2(round uint64) ([]byte, error) {
+	blk, cert, err := ls.ledger.EncodedBlockCert(basics.Round(round))
+	if err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	blockLen := int32(len(blk))
+	binary.Write(buf, binary.LittleEndian, blockLen)
+	encodedLen := buf.Bytes()
+
+	outBytes := make([]byte, len(encodedLen)+len(blk)+len(cert))
+	copy(outBytes[:], encodedLen)
+	copy(outBytes[len(encodedLen):], blk)
+	copy(outBytes[len(encodedLen)+len(blk):], cert)
+	return outBytes, nil
 }

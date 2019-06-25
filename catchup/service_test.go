@@ -97,8 +97,8 @@ func (c *MockClient) Close() error {
 	})
 	return nil
 }
-func (c *MockClient) GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, err error) {
-	return nil, nil
+func (c *MockClient) GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, contentType string, err error) {
+	return nil, "", nil
 }
 
 // Mocked Fetcher

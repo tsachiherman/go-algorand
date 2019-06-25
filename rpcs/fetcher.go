@@ -17,7 +17,9 @@
 package rpcs
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -220,13 +222,13 @@ func (networkFetcher *NetworkFetcher) FetchBlock(ctx context.Context, r basics.R
 	defer networkFetcher.releaseClient(client)
 	networkFetcher.log.Infof("networkFetcher.FetchBlock: asking client %v for block %v", client.Address(), r)
 
-	fetchedBuf, err := client.GetBlockBytes(ctx, r)
+	fetchedBuf, contentType, err := client.GetBlockBytes(ctx, r)
 	if err != nil {
 		networkFetcher.markPeerLastRound(client, r)
 		err = fmt.Errorf("Peer %v: %v", client.Address(), err)
 		return
 	}
-	block, cert, err := processBlockBytes(fetchedBuf, r, client.Address())
+	block, cert, err := processBlockBytes(fetchedBuf, contentType, r, client.Address())
 	if err != nil {
 		networkFetcher.markPeerLastRound(client, r)
 		return
@@ -298,22 +300,94 @@ func (cf *ComposedFetcher) Close() {
 
 /* Utils */
 
-func processBlockBytes(fetchedBuf []byte, r basics.Round, debugStr string) (blk *bookkeeping.Block, cert *agreement.Certificate, err error) {
+func processBlockBytes(fetchedBuf []byte, contentType string, r basics.Round, debugStr string) (blk *bookkeeping.Block, cert *agreement.Certificate, err error) {
+	switch contentType {
+	case ledgerResponseContentTypeV1:
+		blk, cert, err = processBlockBytesV1(fetchedBuf, r, debugStr)
+	case ledgerResponseContentTypeV2:
+		blk, cert, err = processBlockBytesV2(fetchedBuf, r, debugStr)
+	default:
+		err = fmt.Errorf("processBlockBytes: got unexpected contentType '%s'", contentType)
+		return
+	}
+	if err != nil {
+		blk = nil
+		cert = nil
+		return
+	}
+	if blk.Round() != r {
+		blk = nil
+		cert = nil
+		err = fmt.Errorf("processBlockBytes(%d): got wrong block from peer %v: wanted %v, got %v", r, debugStr, r, blk.Round())
+		return
+	}
+
+	if cert.Round != r {
+		blk = nil
+		cert = nil
+		err = fmt.Errorf("processBlockBytes(%d): got wrong cert from peer %v: wanted %v, got %v", r, debugStr, r, cert.Round)
+		return
+	}
+
+	return
+}
+
+func processBlockBytesV1(fetchedBuf []byte, r basics.Round, debugStr string) (blk *bookkeeping.Block, cert *agreement.Certificate, err error) {
 	var decodedEntry EncodedBlockCert
 	err = protocol.Decode(fetchedBuf, &decodedEntry)
 	if err != nil {
-		err = fmt.Errorf("networkFetcher.FetchBlock(%d): cannot decode block from peer %v: %v", r, debugStr, err)
+		err = fmt.Errorf("processBlockBytesV1(%d): cannot decode block from peer %v: %v", r, debugStr, err)
 		return
 	}
 
-	if decodedEntry.Block.Round() != r {
-		err = fmt.Errorf("networkFetcher.FetchBlock(%d): got wrong block from peer %v: wanted %v, got %v", r, debugStr, r, decodedEntry.Block.Round())
-		return
-	}
-
-	if decodedEntry.Certificate.Round != r {
-		err = fmt.Errorf("networkFetcher.FetchBlock(%d): got wrong cert from peer %v: wanted %v, got %v", r, debugStr, r, decodedEntry.Certificate.Round)
-		return
-	}
 	return &decodedEntry.Block, &decodedEntry.Certificate, nil
+}
+
+func processBlockBytesV2(fetchedBuf []byte, r basics.Round, debugStr string) (blk *bookkeeping.Block, cert *agreement.Certificate, err error) {
+	buf := bytes.NewReader(fetchedBuf)
+	var blkLen int32
+	err = binary.Read(buf, binary.LittleEndian, &blkLen)
+	if err != nil {
+		err = fmt.Errorf("processBlockBytesV2(%d): cannot decode block from peer %v: %v", r, debugStr, err)
+		return
+	}
+	if int(blkLen)+binary.Size(&blkLen) > len(fetchedBuf) {
+		err = fmt.Errorf("processBlockBytesV2(%d): invalid block length %d > %d", r, blkLen, len(fetchedBuf))
+		return
+	}
+	blkBytes := make([]byte, blkLen)
+	certBytes := make([]byte, int32(len(fetchedBuf)-binary.Size(&blkLen))-blkLen)
+
+	err = binary.Read(buf, binary.LittleEndian, blkBytes[:])
+	if err != nil {
+		err = fmt.Errorf("processBlockBytesV2(%d): cannot decode block from peer %v: %v", r, debugStr, err)
+		return
+	}
+
+	if len(certBytes) > 0 {
+		err = binary.Read(buf, binary.LittleEndian, certBytes[:])
+		if err != nil {
+			err = fmt.Errorf("processBlockBytesV2(%d): cannot decode block from peer %v: %v", r, debugStr, err)
+			return
+		}
+	}
+
+	var block bookkeeping.Block
+	var outCert agreement.Certificate
+	err = protocol.Decode(blkBytes, &block)
+	if err != nil {
+		err = fmt.Errorf("processBlockBytesV2(%d): cannot decode block from peer %v: %v", r, debugStr, err)
+		return
+	}
+
+	if len(certBytes) > 0 {
+		err = protocol.Decode(certBytes, &outCert)
+		if err != nil {
+			err = fmt.Errorf("processBlockBytesV2(%d): cannot decode block from peer %v: %v", r, debugStr, err)
+			return
+		}
+		return &block, &outCert, nil
+	}
+	return &block, nil, nil
+
 }

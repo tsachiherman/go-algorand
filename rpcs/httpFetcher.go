@@ -36,7 +36,7 @@ var errNoBlockForRound = errors.New("No block available for given round")
 
 // FetcherClient abstracts how to GetBlockBytes from a node on the net.
 type FetcherClient interface {
-	GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, err error)
+	GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, contentType string, err error)
 	Address() string
 	Close() error
 }
@@ -59,23 +59,25 @@ func MakeHTTPFetcher(log logging.Logger, peer network.HTTPPeer) (fc FetcherClien
 
 // GetBlockBytes gets a block.
 // Core piece of FetcherClient interface
-func (hf *HTTPFetcher) GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, err error) {
+func (hf *HTTPFetcher) GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, contentType string, err error) {
 	parsedURL, err := network.ParseHostOrURL(hf.rootURL)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	parsedURL.Path = hf.peer.PrepareURL(path.Join(parsedURL.Path, "/v1/{genesisID}/block/"+strconv.FormatUint(uint64(r), 36)))
 	blockURL := parsedURL.String()
 	hf.log.Debugf("block GET %#v peer %#v %T", blockURL, hf.peer, hf.peer)
 	request, err := http.NewRequest("GET", blockURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	request = request.WithContext(ctx)
+	request.Header.Add("Accept", ledgerResponseContentTypeLatest)
+	request.Header.Add("Accept", ledgerResponseContentTypeV1)
 	response, err := hf.client.Do(request)
 	if err != nil {
 		hf.log.Debugf("GET %#v : %s", blockURL, err)
-		return nil, err
+		return nil, "", err
 	}
 
 	// check to see that we had no errors.
@@ -83,11 +85,11 @@ func (hf *HTTPFetcher) GetBlockBytes(ctx context.Context, r basics.Round) (data 
 	case http.StatusOK:
 	case http.StatusNotFound: // server could not find a block with that round numbers.
 		response.Body.Close()
-		return nil, errNoBlockForRound
+		return nil, "", errNoBlockForRound
 	default:
 		hf.log.Warn("http block fetcher response status code : ", response.StatusCode)
 		response.Body.Close()
-		return nil, fmt.Errorf("GetBlockBytes error response status code %d", response.StatusCode)
+		return nil, "", fmt.Errorf("GetBlockBytes error response status code %d", response.StatusCode)
 	}
 
 	// at this point, we've already receieved the response headers. ensure that the
@@ -97,19 +99,28 @@ func (hf *HTTPFetcher) GetBlockBytes(ctx context.Context, r basics.Round) (data 
 		err = fmt.Errorf("http block fetcher invalid content type count %d", len(contentTypes))
 		hf.log.Warn(err)
 		response.Body.Close()
-		return nil, err
+		return nil, "", err
 	}
 
 	// TODO: Temporarily allow old and new content types so we have time for lazy upgrades
 	// Remove this 'old' string after next release.
 	const ledgerResponseContentTypeOld = "application/algorand-block-v1"
-	if contentTypes[0] != ledgerResponseContentType && contentTypes[0] != ledgerResponseContentTypeOld {
+	switch contentTypes[0] {
+	case ledgerResponseContentTypeOld:
+		fallthrough
+	case ledgerResponseContentTypeV1:
+		// these are all valid expected content types.
+		contentType = ledgerResponseContentTypeV1
+	case ledgerResponseContentTypeV2:
+		contentType = ledgerResponseContentTypeV2
+	default:
 		hf.log.Warnf("http block fetcher response has an invalid content type : %s", contentTypes[0])
 		response.Body.Close()
-		return nil, fmt.Errorf("http block fetcher invalid content type '%s'", contentTypes[0])
+		return nil, "", fmt.Errorf("http block fetcher invalid content type '%s'", contentTypes[0])
 	}
 
-	return responseBytes(response, hf.log, fetcherMaxBlockBytes)
+	data, err = responseBytes(response, hf.log, fetcherMaxBlockBytes)
+	return data, contentType, err
 }
 
 // Address is part of FetcherClient interface.

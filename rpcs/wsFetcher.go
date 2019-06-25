@@ -170,34 +170,34 @@ func (w *wsFetcherClient) getChForRound(r uint64) chan WsGetBlockOut {
 }
 
 // GetBlockBytes implements FetcherClient
-func (w *wsFetcherClient) GetBlockBytes(ctx context.Context, r basics.Round) ([]byte, error) {
+func (w *wsFetcherClient) GetBlockBytes(ctx context.Context, r basics.Round) ([]byte, string, error) {
 	listen := w.getChForRound(uint64(r))
 	if listen == nil {
-		return nil, fmt.Errorf("wsFetcherClient(%d): preconnection closed", r)
+		return nil, "", fmt.Errorf("wsFetcherClient(%d): preconnection closed", r)
 	}
 
 	// unicast
 	req := WsGetBlockRequest{Round: uint64(r)}
 	err := w.target.Unicast(ctx, protocol.Encode(req), w.tag)
 	if err != nil {
-		return nil, fmt.Errorf("wsFetcherClient(%d): unicast failed, %v", r, err)
+		return nil, "", fmt.Errorf("wsFetcherClient(%d): unicast failed, %v", r, err)
 	}
 
 	// now, wait for reply
 	select {
 	case resp, ok := <-listen:
 		if !ok {
-			return nil, fmt.Errorf("wsFetcherClient(%d): connection closed", r)
+			return nil, "", fmt.Errorf("wsFetcherClient(%d): connection closed", r)
 		}
 		if resp.Error != "" {
-			return nil, fmt.Errorf("wsFetcherClient(%d): server error, %v", r, resp.Error)
+			return nil, "", fmt.Errorf("wsFetcherClient(%d): server error, %v", r, resp.Error)
 		}
 		if resp.BlockBytes == nil {
-			return nil, fmt.Errorf("wsFetcherClient(%d): empty response", r)
+			return nil, "", fmt.Errorf("wsFetcherClient(%d): empty response", r)
 		}
-		return resp.BlockBytes, nil
+		return resp.BlockBytes, ledgerResponseContentTypeV1, nil
 	case <-ctx.Done():
-		return nil, fmt.Errorf("wsFetcherClient(%d): cancelled by caller", r)
+		return nil, "", fmt.Errorf("wsFetcherClient(%d): cancelled by caller", r)
 	}
 }
 

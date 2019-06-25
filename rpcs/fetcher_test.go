@@ -191,19 +191,19 @@ type dummyFetcher struct {
 }
 
 // FetcherClient interface
-func (df *dummyFetcher) GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, err error) {
+func (df *dummyFetcher) GetBlockBytes(ctx context.Context, r basics.Round) (data []byte, contentType string, err error) {
 	if df.failWithNil {
-		return nil, nil
+		return nil, "", nil
 	}
 	if df.failWithError {
-		return nil, errors.New("failing call")
+		return nil, "", errors.New("failing call")
 	}
 	timer := time.NewTimer(goExecTime)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, "", ctx.Err()
 	}
 
 	// Fill in the dummy response with the correct round
@@ -218,7 +218,7 @@ func (df *dummyFetcher) GetBlockBytes(ctx context.Context, r basics.Round) (data
 		},
 	}
 
-	return protocol.Encode(dummyBlock), nil
+	return protocol.Encode(dummyBlock), ledgerResponseContentTypeV1, nil
 }
 
 // FetcherClient interface
