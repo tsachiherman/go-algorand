@@ -13,6 +13,9 @@ BUILDBRANCH      ?= $(shell ./scripts/compute_branch.sh)
 BUILDCHANNEL     ?= $(shell ./scripts/compute_branch_channel.sh $(BUILDBRANCH))
 DEFAULTNETWORK   ?= $(shell ./scripts/compute_branch_network.sh $(BUILDBRANCH))
 DEFAULT_DEADLOCK ?= $(shell ./scripts/compute_branch_deadlock_default.sh $(BUILDBRANCH))
+HOST_ARCH        := $(./script/archtype.sh)
+GOARCH           := $(shell go env GOARCH)
+GOOS             := $(shell go env GOOS)
 
 ifeq ($(UNAME), Linux)
 EXTLDFLAGS := -static-libstdc++ -static-libgcc
@@ -20,6 +23,16 @@ endif
 
 GOTAGS          := --tags "sqlite_unlock_notify sqlite_omit_load_extension"
 GOTRIMPATH	:= $(shell go help build | grep -q .-trimpath && echo -trimpath)
+
+ifneq ($(TARGET_ARCH), $(HOST_ARCH))
+GOARCH := $(TARGET_ARCH)
+ifeq ($(TARGET_ARCH), arm)
+GOOS := linux
+endif
+ifeq ($(TARGET_ARCH), arm64)
+GOOS := linux
+endif
+endif
 
 GOLDFLAGS_BASE  := -X github.com/algorand/go-algorand/config.BuildNumber=$(BUILDNUMBER) \
 		 -X github.com/algorand/go-algorand/config.CommitHash=$(COMMITHASH) \
@@ -63,12 +76,24 @@ generate: deps
 	PATH=$(GOPATH1)/bin:$$PATH go generate ./...
 
 # build our fork of libsodium, placing artifacts into crypto/lib/ and crypto/include/
+ifeq ($(TARGET_ARCH), $(HOST_ARCH))
 crypto/lib/libsodium.a:
 	cd crypto/libsodium-fork && \
 		./autogen.sh && \
 		./configure --disable-shared --prefix="$(SRCPATH)/crypto/" && \
 		$(MAKE) && \
 		$(MAKE) install
+else
+crypto/lib/libsodium.a:
+	cd crypto/libsodium-fork && \
+		PATH=/usr/local/opt/gcc-arm-none-eabi/bin:$$PATH && \
+		LDFLAGS='--specs=nosys.specs' && \
+		CFLAGS='-Os' && \
+		./autogen.sh && \
+		./configure --disable-shared --host=arm-none-eabi --prefix="$(SRCPATH)/crypto/" LDFLAGS="--specs=nosys.specs" CFLAGS="-Os" && \
+		$(MAKE) && \
+		$(MAKE) install
+endif
 
 deps:
 	./scripts/check_deps.sh
@@ -122,7 +147,7 @@ $(KMD_API_SWAGGER_INJECT): $(KMD_API_SWAGGER_SPEC) $(KMD_API_SWAGGER_SPEC).valid
 build: buildsrc gen
 
 buildsrc: crypto/lib/libsodium.a node_exporter NONGO_BIN deps $(ALGOD_API_SWAGGER_INJECT) $(KMD_API_SWAGGER_INJECT)
-	go install $(GOTRIMPATH) $(GOTAGS) -ldflags="$(GOLDFLAGS)" ./...
+	CC=/usr/local/opt/gcc-arm-none-eabi/bin/arm-none-eabi-gcc GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED="1" go install $(GOTRIMPATH) $(GOTAGS) -ldflags="$(GOLDFLAGS)" ./...
 	go vet ./...
 
 SOURCES_RACE := github.com/algorand/go-algorand/cmd/kmd

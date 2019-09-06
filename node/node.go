@@ -171,7 +171,7 @@ func MakeFull(log logging.Logger, rootDir string, cfg config.Local, phonebookDir
 	ledgerPathnamePrefix := filepath.Join(genesisDir, config.LedgerFilenamePrefix)
 
 	// create initial ledger, if it doesn't exist
-	os.Mkdir(genesisDir, 0700)
+	os.Mkdir(genesisDir, 0775)
 	var genalloc data.GenesisBalances
 	genalloc, err = bootstrapData(genesis, log)
 	if err != nil {
