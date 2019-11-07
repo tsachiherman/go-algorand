@@ -695,8 +695,12 @@ func (node *AlgorandFullNode) IsArchival() bool {
 	return node.config.Archival
 }
 
+var nodeOnNewBlockGuage = metrics.MakeGauge(metrics.MetricName{Name: "algod_node_on_new_block_secs", Description: ""})
+
 // OnNewBlock implements the BlockListener interface so we're notified after each block is written to the ledger
 func (node *AlgorandFullNode) OnNewBlock(block bookkeeping.Block) {
+	start := time.Now()
+
 	// Update fee tracker
 	node.feeTracker.ProcessBlock(block)
 
@@ -710,6 +714,8 @@ func (node *AlgorandFullNode) OnNewBlock(block bookkeeping.Block) {
 	case node.oldKeyDeletionNotify <- struct{}{}:
 	default:
 	}
+
+	nodeOnNewBlockGuage.Set(time.Now().Sub(start).Seconds(), nil)
 }
 
 // oldKeyDeletionThread keeps deleting old participation keys.

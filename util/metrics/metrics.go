@@ -89,4 +89,6 @@ var (
 	TransactionMessagesDroppedFromBacklog = MetricName{Name: "algod_transaction_messages_dropped_backlog", Description: "Number of transaction messages dropped from backlog"}
 	// TransactionMessagesDroppedFromPool "Number of transaction messages dropped from pool"
 	TransactionMessagesDroppedFromPool = MetricName{Name: "algod_transaction_messages_dropped_pool", Description: "Number of transaction messages dropped from pool"}
+	// TransactionPoolBlockEvaluatorWait "Total time waited for evaluator on transaction pool test"
+	TransactionPoolBlockEvaluatorWait = MetricName{Name: "algod_transaction_pool_block_evaluator_wait_total", Description: "Total time waited for evaluator on transaction pool test"}
 )

@@ -18,12 +18,14 @@ package node
 
 import (
 	"sort"
+	"time"
 
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/bookkeeping"
 	"github.com/algorand/go-algorand/logging"
 	"github.com/algorand/go-algorand/logging/telemetryspec"
 	"github.com/algorand/go-algorand/protocol"
+	"github.com/algorand/go-algorand/util/metrics"
 )
 
 const numTopAccounts = 20
@@ -59,18 +61,24 @@ func (t *topAccountListener) init(balances basics.BalanceDetail) {
 	t.accounts = updateTopAccounts(t.accounts, balances.Accounts)
 }
 
+var topAccountListenerOnNewBlockGuage = metrics.MakeGauge(metrics.MetricName{Name: "algod_top_accounts_on_new_block_secs", Description: ""})
+
 // BlockListener event, triggered when the ledger writes a new block.
 func (t *topAccountListener) OnNewBlock(b bookkeeping.Block) {
-	// XXX revise for new ledger API
-	// t.update(b, balances)
-
-	// If number of accounts after update is insufficient, do a full re-init
-	if len(t.accounts) < numTopAccounts {
+	start := time.Now()
+	func() {
 		// XXX revise for new ledger API
-		// t.init(balances)
-	}
+		// t.update(b, balances)
 
-	t.sendEvent()
+		// If number of accounts after update is insufficient, do a full re-init
+		if len(t.accounts) < numTopAccounts {
+			// XXX revise for new ledger API
+			// t.init(balances)
+		}
+
+		t.sendEvent()
+	}()
+	topAccountListenerOnNewBlockGuage.Set(time.Now().Sub(start).Seconds(), nil)
 }
 
 // Account cache update logic here.

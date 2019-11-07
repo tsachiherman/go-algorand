@@ -32,6 +32,7 @@ import (
 	"github.com/algorand/go-algorand/logging/telemetryspec"
 	"github.com/algorand/go-algorand/protocol"
 	"github.com/algorand/go-algorand/util/condvar"
+	"github.com/algorand/go-algorand/util/metrics"
 )
 
 // TransactionPool is a struct maintaining a sanitized pool of transactions that are available for inclusion in
@@ -95,6 +96,9 @@ const expiredHistory = 10
 // timeoutOnNewBlock determines how long Test() and Remember() wait for
 // OnNewBlock() to process a new block that appears to be in the ledger.
 const timeoutOnNewBlock = time.Second
+
+// ErrTransactionPoolWaitingForNewBlock indicates that the transaction pool is currently unable to verify a transaction since it's waiting for a new block processing to complete.
+var ErrTransactionPoolWaitingForNewBlock = fmt.Errorf("transactionPool is waiting for new block notification processing to complete")
 
 // NumExpired returns the number of transactions that expired at the end of a round (only meaningful if cleanup has
 // been called for that round)
@@ -165,25 +169,7 @@ func (pool *TransactionPool) PendingCount() int {
 	return count
 }
 
-// Test checks whether a transaction group could be remembered in the pool,
-// but does not actually store this transaction in the pool.
-func (pool *TransactionPool) Test(txgroup []transactions.SignedTxn) error {
-	for i := range txgroup {
-		txgroup[i].InitCaches()
-	}
-
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
-
-	return pool.test(txgroup)
-}
-
-// test checks whether a transaction group could be remembered in the pool,
-// but does not actually store this transaction in the pool.
-//
-// test assumes that pool.mu is locked.  It might release the lock
-// while it waits for OnNewBlock() to be called.
-func (pool *TransactionPool) test(txgroup []transactions.SignedTxn) error {
+func (pool *TransactionPool) waitForBlockEvaluator(waitDeadline time.Time) error {
 	if pool.pendingBlockEvaluator == nil {
 		return fmt.Errorf("TransactionPool.test: no pending block evaluator")
 	}
@@ -192,14 +178,59 @@ func (pool *TransactionPool) test(txgroup []transactions.SignedTxn) error {
 	// If not, we might be in a race, so wait a little bit for OnNewBlock()
 	// to catch up to the ledger.
 	latest := pool.ledger.Latest()
-	waitExpires := time.Now().Add(timeoutOnNewBlock)
-	for pool.pendingBlockEvaluator.Round() <= latest && time.Now().Before(waitExpires) {
-		condvar.TimedWait(&pool.cond, timeoutOnNewBlock)
+	startWait := time.Now()
+	endWait := startWait
+	for pool.pendingBlockEvaluator.Round() <= latest && time.Now().Before(waitDeadline) {
+		condvar.TimedWait(&pool.cond, waitDeadline.Sub(time.Now()))
 		if pool.pendingBlockEvaluator == nil {
 			return fmt.Errorf("TransactionPool.test: no pending block evaluator")
 		}
+		endWait = time.Now()
+	}
+	if endWait != startWait {
+		transactionPoolWaitingForBlockEval.Set(endWait.Sub(startWait).Seconds(), nil)
 	}
 
+	if pool.pendingBlockEvaluator.Round() <= latest {
+		return ErrTransactionPoolWaitingForNewBlock
+	}
+
+	return nil
+}
+
+// Test checks whether a transaction group could be remembered in the pool,
+// but does not actually store this transaction in the pool.
+func (pool *TransactionPool) Test(txgroup []transactions.SignedTxn, wait bool) error {
+	for i := range txgroup {
+		txgroup[i].InitCaches()
+	}
+
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	var waitDeadline time.Time
+	if wait {
+		waitDeadline = time.Now().Add(timeoutOnNewBlock)
+	} else {
+		// we don't want to wait.
+		waitDeadline = time.Now()
+	}
+
+	if err := pool.waitForBlockEvaluator(waitDeadline); err != nil {
+		return err
+	}
+
+	return pool.test(txgroup)
+}
+
+var transactionPoolWaitingForBlockEval = metrics.MakeGauge(metrics.TransactionPoolBlockEvaluatorWait)
+
+// test checks whether a transaction group could be remembered in the pool,
+// but does not actually store this transaction in the pool.
+//
+// test assumes that pool.mu is locked.  It might release the lock
+// while it waits for OnNewBlock() to be called.
+func (pool *TransactionPool) test(txgroup []transactions.SignedTxn) error {
 	tentativeRound := pool.pendingBlockEvaluator.Round() + pool.numPendingWholeBlocks
 	err := pool.pendingBlockEvaluator.TestTransactionGroup(txgroup)
 	if err == ledger.ErrNoSpace {
@@ -273,6 +304,10 @@ func (pool *TransactionPool) Remember(txgroup []transactions.SignedTxn) error {
 
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
+
+	if err := pool.waitForBlockEvaluator(time.Now().Add(timeoutOnNewBlock)); err != nil {
+		return err
+	}
 
 	err := pool.test(txgroup)
 	if err != nil {
@@ -362,8 +397,16 @@ func (pool *TransactionPool) EvalRemember(cvers protocol.ConsensusVersion, txid 
 	pool.lsigCache.put(cvers, txid, err)
 }
 
+var txPoolOnNewBlockGuage = metrics.MakeGauge(metrics.MetricName{Name: "algod_tx_pool_on_new_block_secs", Description: ""})
+var txPoolRecomputeGuage = metrics.MakeGauge(metrics.MetricName{Name: "algod_tx_pool_recompute_secs", Description: ""})
+var txPoolRecomputeLoopGuage = metrics.MakeGauge(metrics.MetricName{Name: "algod_tx_pool_recompute_loop_secs", Description: ""})
+
 // OnNewBlock excises transactions from the pool that are included in the specified Block or if they've expired
 func (pool *TransactionPool) OnNewBlock(block bookkeeping.Block) {
+	start := time.Now()
+	defer func() {
+		txPoolOnNewBlockGuage.Set(time.Now().Sub(start).Seconds(), nil)
+	}()
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	defer pool.cond.Broadcast()
@@ -412,10 +455,13 @@ func (pool *TransactionPool) OnNewBlock(block bookkeeping.Block) {
 			}
 		}
 
+		t := time.Now()
 		// Recompute the pool by starting from the new latest block.
 		// This has the side-effect of discarding transactions that
 		// have been committed (or that are otherwise no longer valid).
 		stats = pool.recomputeBlockEvaluator()
+
+		txPoolRecomputeGuage.Set(time.Now().Sub(t).Seconds(), nil)
 	}
 
 	stats.KnownCommittedCount = knownCommitted
@@ -506,6 +552,7 @@ func (pool *TransactionPool) recomputeBlockEvaluator() (stats telemetryspec.Proc
 	txgroups := pool.pendingTxGroups
 	pool.pendingMu.RUnlock()
 
+	t := time.Now()
 	for _, txgroup := range txgroups {
 		err := pool.remember(txgroup)
 		if err != nil {
@@ -521,6 +568,7 @@ func (pool *TransactionPool) recomputeBlockEvaluator() (stats telemetryspec.Proc
 			}
 		}
 	}
+	txPoolRecomputeLoopGuage.Set(time.Now().Sub(t).Seconds(), nil)
 
 	pool.rememberCommit(true)
 	return
