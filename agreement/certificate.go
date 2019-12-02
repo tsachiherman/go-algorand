@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/bookkeeping"
 )
 
@@ -61,4 +62,10 @@ func (c Certificate) claimsToAuthenticate(e bookkeeping.Block) error {
 		return fmt.Errorf("certificate claims to validate the wrong hash: %v != %v", c.Proposal.BlockDigest, e.Digest())
 	}
 	return nil
+}
+
+// Authenticators returns the list of accounts addresses that have signed off this certificate.
+func (c Certificate) Authenticators() (authenticatorsList []basics.Address) {
+	authenticatorsList = unauthenticatedBundle(c).authenticators()
+	return
 }

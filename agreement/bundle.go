@@ -277,6 +277,23 @@ func (b unauthenticatedBundle) Certificate() Certificate {
 	return Certificate(b)
 }
 
+func (b unauthenticatedBundle) authenticators() (authenticatorsList []basics.Address) {
+	authenticators := make(map[string]basics.Address)
+	for _, vote := range b.Votes {
+		authenticators[vote.Sender.String()] = vote.Sender
+	}
+	for _, vote := range b.EquivocationVotes {
+		authenticators[vote.Sender.String()] = vote.Sender
+	}
+	authenticatorsList = make([]basics.Address, len(authenticators))
+	i := 0
+	for _, auth := range authenticators {
+		authenticatorsList[i] = auth
+		i++
+	}
+	return
+}
+
 func (b bundle) u() unauthenticatedBundle {
 	return b.U
 }
