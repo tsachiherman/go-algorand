@@ -91,3 +91,17 @@ CREATE TABLE admins (
     username VARCHAR(255) NOT NULL UNIQUE ,
     passwordHash VARCHAR(255) NOT NULL
 );
+
+CREATE TABLE public.hosts
+(
+    srvname text COLLATE pg_catalog."default",
+    guid text COLLATE pg_catalog."default",
+    telemetryid text COLLATE pg_catalog."default",
+    ipaddress text COLLATE pg_catalog."default",
+    "long" real,
+    lat real,
+    country text COLLATE pg_catalog."default",
+    state text COLLATE pg_catalog."default",
+    city text COLLATE pg_catalog."default"
+);
+

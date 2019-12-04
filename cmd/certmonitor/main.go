@@ -19,9 +19,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +48,8 @@ const statusToken = "8bef3da297740104ee50f823b0a9ef3df52e8d707655f22eeb6cbd4c5bc
 */
 const statusEndpoint = "http://localhost:5160"
 const statusToken = "11447faa00ad3e9414430a582601f7c0dc6a1f7dbe9a2cd29584414f373ca3fc"
+
+const connStr = "postgres://tsachi:gogators@localhost/relays?sslmode=disable"
 
 // HTTPPeer ...
 type HTTPPeer struct {
@@ -141,7 +146,7 @@ func fetchBlocks(round basics.Round) (certMap map[string][]string, period int, s
 	return certificates, period, step
 }
 func saveBlocksToDB(auths map[string][]string, round uint64, period int, step int, votes []voteSentEventData) {
-	connStr := "postgres://tsachi:gogators@localhost/relays?sslmode=disable"
+
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		fmt.Printf("Unable to connect to database : %v\n", err)
@@ -330,7 +335,6 @@ func saveRelaySessionAssociation(association map[string]string) {
 		return
 	}
 
-	connStr := "postgres://tsachi:gogators@localhost/relays?sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		fmt.Printf("Unable to connect to database : %v\n", err)
@@ -396,7 +400,7 @@ func getLastConnectionUpdate() (lastupdate time.Time, err error) {
 	err = db.QueryRowContext(timeoutContext, "select timevalue from dynamics where key='lastConnectionUpdate'").Scan(&lastupdate)
 	switch {
 	case err == sql.ErrNoRows:
-		return time.Now().Add(-5 * 24 * time.Hour), nil
+		return time.Now().Add(-10 * 24 * time.Hour), nil
 	case err != nil:
 		fmt.Printf("getLastConnectionUpdate : %v\n", err)
 		return time.Now(), err
@@ -503,11 +507,309 @@ func updateConnections() {
 	}
 }
 
+func updateSingleHostGeolocationViaHackerTarget() bool {
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		fmt.Printf("Unable to connect to database : %v\n", err)
+	}
+	defer db.Close()
+	timeoutContext, cancelContextFunc := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancelContextFunc()
+	var srvName, ipaddress sql.NullString
+	err = db.QueryRowContext(timeoutContext, "select srvname, ipaddress from hosts where long is NULL limit 1").Scan(&srvName, &ipaddress)
+	switch {
+	case err == sql.ErrNoRows:
+		return false
+	case err != nil:
+		fmt.Printf("updateSingleHostGeolocation : %v\n", err)
+		return false
+	default:
+	}
+	var queryVariable string
+	if ipaddress.Valid {
+		queryVariable = ipaddress.String
+	} else if srvName.Valid {
+		queryVariable = strings.Split(srvName.String, ":")[0]
+	}
+
+	// get the geo location information.
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", "https://api.hackertarget.com/geoip/?q="+queryVariable, nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("Unable to retrieve geolocation : %v \n", err)
+		return false
+	}
+	defer resp.Body.Close()
+	bodyText, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Unable to read geolocation : %v \n", err)
+		return false
+	}
+	unparsedRows := strings.Split(strings.Replace(string(bodyText), "\r", "", 10), "\n")
+	var country, state, city string
+	var lat, long float32
+	for _, row := range unparsedRows {
+		if strings.HasPrefix(row, "Country: ") {
+			country = row[len("Country: "):]
+		} else if strings.HasPrefix(row, "State: ") {
+			state = row[len("State: "):]
+		} else if strings.HasPrefix(row, "City: ") {
+			city = row[len("City: "):]
+		} else if strings.HasPrefix(row, "Latitude: ") {
+			strLat := row[len("Latitude: "):]
+			if f, err := strconv.ParseFloat(strLat, 32); err == nil {
+				lat = float32(f)
+			}
+		} else if strings.HasPrefix(row, "Longitude: ") {
+			strLong := row[len("Longitude: "):]
+			if f, err := strconv.ParseFloat(strLong, 32); err == nil {
+				long = float32(f)
+			}
+		} else if strings.HasPrefix(row, "API count exceeded") {
+			// reached limit. go to sleep.
+			fmt.Printf("Reached hackertarget geolocation query limit.\r\n")
+			return false
+		}
+	}
+	if lat == float32(0) {
+		fmt.Printf("Geolocation for '%s' is (%v, %v, %v, %v, %v). \n", queryVariable, country, state, city, lat, long)
+		return false
+	}
+	if ipaddress.Valid {
+		_, err = db.ExecContext(timeoutContext, "update hosts set country = $1, state = $2, city = $3, lat = $4, long = $5 where ipaddress = $6",
+			country, state, city, lat, long, ipaddress.String)
+		if err != nil {
+			fmt.Printf("Unable to store geolocation to database : %v\n", err)
+			return false
+		}
+
+	} else {
+		_, err = db.ExecContext(timeoutContext, "update hosts set country = $1, state = $2, city = $3, lat = $4, long = $5 where srvname = $6 and ipaddress is null",
+			country, state, city, lat, long, srvName.String)
+		if err != nil {
+			fmt.Printf("Unable to store geolocation to database : %v\n", err)
+			return false
+		}
+
+	}
+	return true
+}
+
+type ipgeolocation struct {
+	IP        string `json:"ip"`
+	Country   string `json:"country_name"`
+	State     string `json:"state_prov"`
+	City      string `json:"city"`
+	Latitude  string `json:"latitude"`
+	Longitude string `json:"longitude"`
+	Message   string `json:"message"`
+}
+
+func updateSingleHostGeolocationViaIPGeolocation() bool {
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		fmt.Printf("Unable to connect to database : %v\n", err)
+	}
+	defer db.Close()
+	timeoutContext, cancelContextFunc := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancelContextFunc()
+	var srvName, ipaddress sql.NullString
+	err = db.QueryRowContext(timeoutContext, "select srvname, ipaddress from hosts where long is NULL limit 1").Scan(&srvName, &ipaddress)
+	switch {
+	case err == sql.ErrNoRows:
+		return false
+	case err != nil:
+		fmt.Printf("updateSingleHostGeolocation : %v\n", err)
+		return false
+	default:
+	}
+	var queryVariable string
+	if ipaddress.Valid {
+		queryVariable = ipaddress.String
+	} else if srvName.Valid {
+		queryVariable = strings.Split(srvName.String, ":")[0]
+	}
+
+	// get the geo location information.
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", "https://api.ipgeolocation.io/ipgeo?apiKey=dd1bb2501dd2421a9b2cfcabbc028ba0&ip="+queryVariable, nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("Unable to retrieve geolocation : %v \n", err)
+		return false
+	}
+	defer resp.Body.Close()
+	bodyText, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Unable to read geolocation : %v \n", err)
+		return false
+	}
+	var geo ipgeolocation
+	err = json.Unmarshal(bodyText, &geo)
+	if err != nil {
+		fmt.Printf("Unable to parse geolocation : %v \n%s\n", err, string(bodyText))
+		return false
+	}
+	if strings.HasPrefix(geo.Message, "You have exceeded your subscription") {
+		fmt.Printf("Reached IPGeolocation geolocation query limit.\r\n")
+		return false
+	}
+	var long, lat float32
+	if f, err := strconv.ParseFloat(geo.Longitude, 32); err == nil {
+		long = float32(f)
+	} else {
+		fmt.Printf("Unable to parse longitude : %v\n", err)
+		fmt.Printf("response was : %s\n", string(bodyText))
+		return false
+	}
+	if f, err := strconv.ParseFloat(geo.Latitude, 32); err == nil {
+		lat = float32(f)
+	} else {
+		fmt.Printf("Unable to parse latitude : %v\n", err)
+		fmt.Printf("response was : %s\n", string(bodyText))
+		return false
+	}
+
+	if ipaddress.Valid {
+		_, err = db.ExecContext(timeoutContext, "update hosts set country = $1, state = $2, city = $3, lat = $4, long = $5 where ipaddress = $6",
+			geo.Country, geo.State, geo.City, long, lat, ipaddress.String)
+		if err != nil {
+			fmt.Printf("Unable to store geolocation to database : %v\n", err)
+			return false
+		}
+
+	} else {
+		_, err = db.ExecContext(timeoutContext, "update hosts set country = $1, state = $2, city = $3, lat = $4, long = $5 where srvname = $6 and ipaddress is null",
+			geo.Country, geo.State, geo.City, long, lat, srvName.String)
+		if err != nil {
+			fmt.Printf("Unable to store geolocation to database : %v\n", err)
+			return false
+		}
+
+	}
+	return true
+}
+
+type ipgeolocationextreme struct {
+	Country   string `json:"country"`
+	State     string `json:"region"`
+	City      string `json:"city"`
+	Latitude  string `json:"lat"`
+	Longitude string `json:"lon"`
+}
+
+func updateSingleHostGeolocationViaExtremeIPLookup() bool {
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		fmt.Printf("Unable to connect to database : %v\n", err)
+	}
+	defer db.Close()
+	timeoutContext, cancelContextFunc := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancelContextFunc()
+	var srvName, ipaddress sql.NullString
+	err = db.QueryRowContext(timeoutContext, "select srvname, ipaddress from hosts where long is NULL and ipaddress not like '%:%' limit 1").Scan(&srvName, &ipaddress)
+	switch {
+	case err == sql.ErrNoRows:
+		return false
+	case err != nil:
+		fmt.Printf("updateSingleHostGeolocation : %v\n", err)
+		return false
+	default:
+	}
+	var queryVariable string
+	if ipaddress.Valid {
+		queryVariable = ipaddress.String
+	} else if srvName.Valid {
+		queryVariable = strings.Split(srvName.String, ":")[0]
+	}
+	fmt.Printf("Resolving geolocation for '%s' via ExtremeIPLookup\n", queryVariable)
+
+	// get the geo location information.
+	client := &http.Client{}
+	// since it supports only 20 req/min ( free ), we'll just add a short sleep here.
+	time.Sleep(3 * time.Second)
+	req, err := http.NewRequest("GET", "http://extreme-ip-lookup.com/json/"+queryVariable, nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("Unable to retrieve geolocation : %v \n", err)
+		return false
+	}
+	defer resp.Body.Close()
+	bodyText, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Unable to read geolocation : %v \n", err)
+		return false
+	}
+	var geo ipgeolocationextreme
+	err = json.Unmarshal(bodyText, &geo)
+	if err != nil {
+		fmt.Printf("Unable to parse geolocation : %v \n%s\n", err, string(bodyText))
+		return false
+	}
+	/*if strings.HasPrefix(geo.Message, "You have exceeded your subscription") {
+		fmt.Printf("Reached IPGeolocation geolocation query limit.\r\n")
+		return false
+	}*/
+	var long, lat float32
+	if f, err := strconv.ParseFloat(geo.Longitude, 32); err == nil {
+		long = float32(f)
+	} else {
+		fmt.Printf("Unable to parse longitude : %v\n", err)
+		fmt.Printf("response was : %s\n", string(bodyText))
+		return false
+	}
+	if f, err := strconv.ParseFloat(geo.Latitude, 32); err == nil {
+		lat = float32(f)
+	} else {
+		fmt.Printf("Unable to parse latitude : %v\n", err)
+		fmt.Printf("response was : %s\n", string(bodyText))
+		return false
+	}
+
+	if ipaddress.Valid {
+		_, err = db.ExecContext(timeoutContext, "update hosts set country = $1, state = $2, city = $3, lat = $4, long = $5 where ipaddress = $6",
+			geo.Country, geo.State, geo.City, long, lat, ipaddress.String)
+		if err != nil {
+			fmt.Printf("Unable to store geolocation to database : %v\n", err)
+			return false
+		}
+
+	} else {
+		_, err = db.ExecContext(timeoutContext, "update hosts set country = $1, state = $2, city = $3, lat = $4, long = $5 where srvname = $6 and ipaddress is null",
+			geo.Country, geo.State, geo.City, long, lat, srvName.String)
+		if err != nil {
+			fmt.Printf("Unable to store geolocation to database : %v\n", err)
+			return false
+		}
+
+	}
+	return true
+}
+
+func updateHostsGeolocations() {
+	fmt.Printf("updating connections..\n")
+
+	for {
+		for updateSingleHostGeolocationViaExtremeIPLookup() {
+			time.Sleep(20 * time.Millisecond)
+		}
+		for updateSingleHostGeolocationViaIPGeolocation() {
+			time.Sleep(20 * time.Millisecond)
+		}
+		for updateSingleHostGeolocationViaHackerTarget() {
+			time.Sleep(20 * time.Millisecond)
+		}
+		time.Sleep(30 * time.Second)
+	}
+}
+
 func main() {
 
-	go certUpdateLoop()
+	/*go certUpdateLoop()
 	go relaySessionGUIDLoop()
-	go updateConnections()
+	go updateConnections()*/
+	go updateHostsGeolocations()
 
 	for {
 		time.Sleep(time.Second)

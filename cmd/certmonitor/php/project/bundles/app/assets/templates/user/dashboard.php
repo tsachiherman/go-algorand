@@ -44,7 +44,17 @@
             <input type="text" style="display:none" name="round" value="<?=$round->round?>">
     </form>
     </span>
-    <span style='width:20px;float: right;'>
+    <span style='width:36px;float: right;'>
+    <form style="display:inline" id="frm_graph2_<?=$round->round?>" target="_blank" method="GET" action="<?=$this->httpPath(
+                'app.action',
+                array('processor' => 'rounddonutgraph', 'action' => 'default')
+            )?>">
+            <a onclick="frm_graph2_<?=$round->round?>.submit()" style="cursor: pointer">
+            <img src='/bundles/app/database-table-icon-10.png' width=16 height=16>
+            </a>
+            <input type="text" style="display:none" name="round" value="<?=$round->round?>">
+            <input type="text" style="display:none" name="graphstyle" value="1">
+    </form>
     <form style="display:inline" id="frm_graph_<?=$round->round?>" target="_blank" method="GET" action="<?=$this->httpPath(
                 'app.action',
                 array('processor' => 'rounddonutgraph', 'action' => 'default')
@@ -53,6 +63,7 @@
             <img src='/bundles/app/icons8-blue-ui-40.png' width=16 height=16>
             </a>
             <input type="text" style="display:none" name="round" value="<?=$round->round?>">
+            <input type="text" style="display:none" name="graphstyle" value="0">
     </form>
     </span>
     </td>

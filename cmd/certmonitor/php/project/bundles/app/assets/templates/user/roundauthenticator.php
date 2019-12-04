@@ -14,9 +14,9 @@
 <thead><tr>
 <th>#</td>
 <th>Authenticator</th>
-<th>Authenticators Popularity</th>
-<th>Authenticator Host GUID</th>
-<th>Authenticator Host</th>
+<th>Popularity</th>
+<th>Host GUID</th>
+<th>Source</th>
 </tr></thead>
     <?php $i = 1; foreach($rounds as $round): ?>
     <tr>
@@ -80,19 +80,9 @@
     <?=$_($round->auth_count)?>&nbspout&nbspof&nbsp<?=$_($round->auth_count/$round->dist)?>)
     </td>
     <td>
-    <?
-        $explode_source_host = explode(":", $round->sourcehost);
-        if (count($explode_source_host) > 0) {
-            echo $explode_source_host[0];
-        }
-    ?>
+    <?=$round->sourcehost?>
     </td>
     <td>
-    <?
-        if (count($explode_source_host) > 1) {
-            echo $explode_source_host[1];
-        }
-    ?>
     </td>
     </tr>
     <?php $i=$i+1; endforeach; ?>

@@ -2,7 +2,15 @@
 
 <div class="container" style="width:81%">
     <div class="alert alert-success" style="text-align:center;font-size:30px" role="alert">
-    Round <?=$roundNumber?> Authenticator Graph</div>
+    Round <?=$roundNumber?>&nbsp
+    <?php
+    if ($graphStyle == "0") {
+        echo "Authenticator Graph";
+    } else {
+        echo "Authenticators Table";
+    }
+    ?>        
+</div>
 </div>
 
 <style>
@@ -19,6 +27,11 @@
 
 }
 </style>
+
+<?php
+    if ($graphStyle == "0") {
+?>
+
 <div class="donutcontainer" id="graph_container">
 <?php
     // create a div for every relay we have.
@@ -30,8 +43,6 @@
 </div>
 
 <script type="text/javascript">
-    //var color1 = '#dff0fe';
-    //var color2 = '#98ccfd';
     var color1 = '#fb9a99';
     var color2 = '#b2df8a';
     
@@ -115,3 +126,86 @@
         ?>
     }
 </script>
+
+<?php
+    } else
+    if ($graphStyle == "1") {
+?>
+
+<div id="table_div"></div>
+<style>
+.vclass {
+    background-color:#b2df8a;
+    text-align:center;
+
+}
+.nclass {
+    background-color:#fb9a99;
+    text-align:center;
+}
+</style>
+
+<form style="display:inline" id="frm_auth" method="GET" action="<?=$this->httpPath(
+                'app.action',
+                array('processor' => 'authenticator', 'action' => 'default')
+            )?>">
+            <input type="text" style="display:none" name="auth" id="frm_auth_name">
+</form>
+
+<script type="text/javascript">
+    google.charts.load('current', {'packages':['table']});
+    google.charts.setOnLoadCallback(drawTable);
+
+    function onPressAuthenticator(authenticator) {
+        
+        document.getElementById("frm_auth_name").value = authenticator;
+        document.getElementById("frm_auth").submit();
+        
+    }
+
+    function drawTable() {
+        var data = new google.visualization.DataTable();
+        data.addColumn('string', 'Relay Name');
+        <?
+        foreach($auths as $auth) {
+            echo "data.addColumn('string', '<a class=\"authenticatorFont\" style=\"cursor: pointer\" onclick=\"onPressAuthenticator(\'" . $auth . "\')\">" . substr($auth,0,3) ."</a>...');\r\n";
+        }
+
+        $relayNum = 0;
+        foreach($relays as $relay=>$hasrelay) {
+            $row = "'" . $relay . "',";
+            
+            $prop = "";
+            $authNum = 1;
+            foreach($auths as $auth) {
+                
+                if (array_key_exists($relay . $auth, $relayauthmap)) {
+                    $row = $row . "'<span>✔</span>',";
+                    $prop = $prop . "data.setProperty(" . $relayNum . "," . $authNum . ", 'className', 'vclass');\r\n";
+                    
+                } else {
+                    $row = $row . "'<span>✗</span>',";
+                    $prop = $prop . "data.setProperty(" . $relayNum . "," . $authNum . ", 'className', 'nclass');\r\n";
+                };
+                $authNum++;
+                
+            }
+            $row = substr($row, 0, -1);
+            echo "data.addRows([[" . $row . "]]);\r\n";
+            echo $prop;
+            $relayNum++;
+        }
+        ?>
+
+        var options = {
+            allowHtml: true,            
+        };
+        
+        var chart = new google.visualization.Table(document.getElementById('table_div'));
+        chart.draw(data, options);
+    }
+</script>
+
+<?php
+    }
+?>

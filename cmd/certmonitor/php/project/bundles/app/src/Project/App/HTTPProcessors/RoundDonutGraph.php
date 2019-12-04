@@ -17,6 +17,8 @@ class RoundDonutGraph extends UserProtected
     public function defaultAction(Request $request)
     {
         $roundNumber = $request->query()->get('round');
+        $graphStyle = $request->query()->get('graphstyle');
+        
 
         // retrieve the connections map for the above timestamp.
         $relayauthenticators = $this->auth()->query()-> 
@@ -49,6 +51,7 @@ class RoundDonutGraph extends UserProtected
             'relays' => $relays,
             'auths' => $auths,
             'relayauthmap' => $relayauthmap,
+            'graphStyle' => $graphStyle
         ));
     }
 
