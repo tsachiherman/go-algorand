@@ -32,6 +32,6 @@ class RoundRelay extends UserProtected
      */
     protected function roundrelay()
     {
-        return $this->components->orm()->repository('roundrelay');
+        return $this->components->orm()->repository('roundrelayex');
     }
 }

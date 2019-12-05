@@ -9,6 +9,7 @@
 <thead><tr>
 <th>#</td>
 <th>Relay</th>
+<th>Relay Location</th>
 <th>Authenticators Count</th>
 </tr></thead>
     <?php $i = 1; foreach($rounds as $round): ?>
@@ -18,10 +19,28 @@
     </td>
     <td >
     <?=$_($round->relay)?>
-    <?
-        $exp_relay = explode(":", $round->relay);
-        if (count($exp_relay) > 1) {
-            echo "<a href='https://api.hackertarget.com/geoip/?q=" . $exp_relay[0]. "' target=_blank><img src='/bundles/app/location.png' height='16px'/></a>";
+    </td>
+    <td>
+    <?php
+        $s = "";
+        if ($round->country != "") {
+            $s = $round->country;
+        }
+        if ($round->state != "") {
+            if ($s != "") {
+                $s = $s . ", ";
+            }
+            $s = $s . $round->state;
+        }
+        if ($round->city != "") {
+            if ($s != "") {
+                $s = $s . ", ";
+            }
+            $s = $s . $round->city;
+        }
+        echo "<span>" . $s . "</span>";
+        if ($round->lat != "") {
+            echo "<span style='width:20px;float: right;'><a href='https://maps.google.com/?q=" . $round->long . "," . $round->lat . "' target=_blank><img src='/bundles/app/location.png' height='16px'/></a></span>";
         }
     ?>
     </td>

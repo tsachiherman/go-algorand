@@ -16,7 +16,7 @@
 <th>Authenticator</th>
 <th>Popularity</th>
 <th>Host GUID</th>
-<th>Source</th>
+<th>Location</th>
 </tr></thead>
     <?php $i = 1; foreach($rounds as $round): ?>
     <tr>
@@ -83,6 +83,28 @@
     <?=$round->sourcehost?>
     </td>
     <td>
+    <?php
+        $s = "";
+        if ($round->country != "") {
+            $s = $round->country;
+        }
+        if ($round->state != "") {
+            if ($s != "") {
+                $s = $s . ", ";
+            }
+            $s = $s . $round->state;
+        }
+        if ($round->city != "") {
+            if ($s != "") {
+                $s = $s . ", ";
+            }
+            $s = $s . $round->city;
+        }
+        echo "<span>" . $s . "</span>";
+        if ($round->lat != "") {
+            echo "<span style='width:20px;float: right;'><a href='https://maps.google.com/?q=" . $round->long . "," . $round->lat . "' target=_blank><img src='/bundles/app/location.png' height='16px'/></a></span>";
+        }
+    ?>
     </td>
     </tr>
     <?php $i=$i+1; endforeach; ?>

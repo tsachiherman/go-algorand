@@ -32,6 +32,6 @@ class RoundAuthenticator extends UserProtected
      */
     protected function authdist()
     {
-        return $this->components->orm()->repository('authdist');
+        return $this->components->orm()->repository('authdistex');
     }
 }
