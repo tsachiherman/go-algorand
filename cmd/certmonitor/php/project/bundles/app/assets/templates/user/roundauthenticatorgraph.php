@@ -78,23 +78,17 @@
 
 <div style="width:100%; text-align:center;overflow-x: scroll;">
 <div id="curve_chart" style="width: 95%; display:inline-block; "></div>
-<div id="sankey_chart" style="width: 95%; height: 100%; display:inline-block;overflow-x: auto;"></div>
+<div id="sankey_chart" style="width: 95%; height: 100%; display:none;overflow-x: auto;"></div>
 </div>
 
 <script type="text/javascript">
-      google.charts.load('current', {'packages':['orgchart']});
       <?
         if ($graphstyle == "0") {
-            echo "document.getElementById('sankey_chart').style.display = \"none\";\r\n";
+            echo "document.getElementById('curve_chart').style.display = \"inline-block\";\r\n";
+            echo "google.charts.load('current', {'packages':['orgchart']});\r\n";
             echo "google.charts.setOnLoadCallback(drawChart);\r\n";
-        } else {
-            echo "document.getElementById('curve_chart').style.display = \"none\";\r\n";
         }
       ?>
-
-      
-      
-
       function drawChart() {
 
         var data = new google.visualization.DataTable();
@@ -204,9 +198,10 @@
 
 
 <script type="text/javascript">
-      google.charts.load('current', {'packages':['sankey']});
       <?
-      if ($graphstyle != "0") {
+      if ($graphstyle == "1") {
+        echo "document.getElementById('sankey_chart').style.display = \"inline-block\";\r\n";
+        echo "google.charts.load('current', {'packages':['sankey']});\r\n";
         echo "google.charts.setOnLoadCallback(drawSankeyChart);\r\n";
       }
       ?>
