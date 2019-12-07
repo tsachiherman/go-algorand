@@ -35,32 +35,40 @@
             <input type="text" style="display:none" name="auth" value="<?=$round->auth?>">
     </form>
     </span>
-    <span style='width:40px;float: right;'>
+    <span style='width:54px;float: right;'>
     <? if ($round->sourcehost != "") { ?>
+        <form style="display:inline" id="frm_graph3_<?=$i?>" target="_blank" method="GET" action="<?=$this->httpPath(
+                'app.action',
+                array('processor' => 'roundauthenticatorgraph', 'action' => 'default')
+            )?>">
+            <input type="text" style="display:none" name="auth" value="<?=$round->auth?>">
+            <input type="text" style="display:none" name="round" value="<?=$round->round?>">
+            <input type="text" style="display:none" name="sourcehost" value="<?=$round->sourcehost?>">
+            <input type="text" style="display:none" name="graphstyle" value="2">
+    </form>
+    <a onclick="frm_graph3_<?=$i?>.submit()" style="cursor: pointer"><img src='/bundles/app/Apps-Google-Maps-icon.png' width=16 height=16></a>
     <form style="display:inline" id="frm_graph_<?=$i?>" target="_blank" method="GET" action="<?=$this->httpPath(
                 'app.action',
                 array('processor' => 'roundauthenticatorgraph', 'action' => 'default')
             )?>">
-            <a onclick="frm_graph_<?=$i?>.submit()" style="cursor: pointer">
-            <img src='/bundles/app/hierarchical-structure.png' width=16 height=16>
-            </a>
+            
             <input type="text" style="display:none" name="auth" value="<?=$round->auth?>">
             <input type="text" style="display:none" name="round" value="<?=$round->round?>">
             <input type="text" style="display:none" name="sourcehost" value="<?=$round->sourcehost?>">
             <input type="text" style="display:none" name="graphstyle" value="0">
     </form>
+    <a onclick="frm_graph_<?=$i?>.submit()" style="cursor: pointer"><img src='/bundles/app/hierarchical-structure.png' width=16 height=16></a>
     <form style="display:inline" id="frm_graph2_<?=$i?>" target="_blank" method="GET" action="<?=$this->httpPath(
                 'app.action',
                 array('processor' => 'roundauthenticatorgraph', 'action' => 'default')
             )?>">
-            <a onclick="frm_graph2_<?=$i?>.submit()" style="cursor: pointer">
-            <img src='/bundles/app/snip.png' width=16 height=16>
-            </a>
+            
             <input type="text" style="display:none" name="auth" value="<?=$round->auth?>">
             <input type="text" style="display:none" name="round" value="<?=$round->round?>">
             <input type="text" style="display:none" name="sourcehost" value="<?=$round->sourcehost?>">
             <input type="text" style="display:none" name="graphstyle" value="1">
     </form>
+    <a onclick="frm_graph2_<?=$i?>.submit()" style="cursor: pointer"><img src='/bundles/app/snip.png' width=16 height=16></a>
     <? } ?>
     </span>
 

@@ -5,6 +5,16 @@
     Vote Route</div>
 </div>
 
+
+<div style="width:100%; text-align:center;overflow-x: scroll;">
+<div id="curve_chart" style="width: 95%; display:inline-block; "></div>
+<div id="sankey_chart" style="width: 95%; height: 100%; display:none;overflow-x: auto;"></div>
+</div>
+<div id="map_div" style="width:100%; height: 100%; display:none;"></div>
+
+<?
+        if ($graphstyle == "0") {
+            ?>
 <style>
  table.google-visualization-orgchart-table {
    border-collapse: separate !important;
@@ -76,18 +86,11 @@
 }
 </style>
 
-<div style="width:100%; text-align:center;overflow-x: scroll;">
-<div id="curve_chart" style="width: 95%; display:inline-block; "></div>
-<div id="sankey_chart" style="width: 95%; height: 100%; display:none;overflow-x: auto;"></div>
-</div>
-
 <script type="text/javascript">
-      <?
-        if ($graphstyle == "0") {
+<?
             echo "document.getElementById('curve_chart').style.display = \"inline-block\";\r\n";
             echo "google.charts.load('current', {'packages':['orgchart']});\r\n";
             echo "google.charts.setOnLoadCallback(drawChart);\r\n";
-        }
       ?>
       function drawChart() {
 
@@ -194,16 +197,21 @@
             'size': 'small'            
             });
       }
-    </script>
+      </script>
+      <?
+        }
+      ?>
+    
 
-
+    <?
+      if ($graphstyle == "1") {      
+      ?>
 <script type="text/javascript">
       <?
-      if ($graphstyle == "1") {
         echo "document.getElementById('sankey_chart').style.display = \"inline-block\";\r\n";
         echo "google.charts.load('current', {'packages':['sankey']});\r\n";
         echo "google.charts.setOnLoadCallback(drawSankeyChart);\r\n";
-      }
+      
       ?>
 
       function drawSankeyChart() {
@@ -326,4 +334,212 @@
             }
             });
       }
-    </script>
+      </script>
+      <?php
+}
+?>
+<?
+        if ($graphstyle == "2") {
+?>
+<style>
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+</style>
+<script type="text/javascript">
+    var polylines = [];
+    document.getElementById('map_div').style.display = "block";
+    document.getElementById('map_div').style.height = "75%";
+    var mapmap;
+
+    function initMap() {
+        mapmap = new google.maps.Map(document.getElementById('map_div'), {
+          center: {lat: <?=$firstVote->long?>, lng: <?=$firstVote->lat?>},
+          zoom: 3
+        });
+
+        drawMap();
+    }    
+
+
+    function drawMap() {
+        <?php
+        $markers = array();
+        array_push($markers, 
+                    (object) [
+                        "long" => $firstVote->long,
+                        "lat" => $firstVote->lat,
+                        "hop" => 0,
+                        "name" => $firstVote->sendertelemetryid ]
+                );
+
+        $connectionsArray = [];
+        $polylines = array();
+        foreach($connections as $conn) {
+            array_push($connectionsArray, $conn);
+        }
+
+        $rowsCount = 1;
+        $rowLevel = 1;
+        $seenVoteRelays = [0];
+        $seenVoteLong = array();
+        array_push($seenVoteLong, "", $firstVote->long);
+
+        foreach($voterConnections as $conn) {
+ \           array_push($seenVoteLong, $conn->otherlong);
+            break;
+        }
+        
+        
+        $pendingConn = [];
+        foreach($voterConnections as $conn) {
+            $otherrelay = '';
+            $relay = '';
+            if ($conn->otherguid == '') {
+                continue;
+            }
+            if (in_array($conn->otherlong, $seenVoteLong)==true) {
+                continue;
+            }
+            foreach($connections as $conn2) {
+                if ($conn2->otherguid == $conn->otherguid) {
+                    $otherrelay = $conn2->otherrelay;
+                    break;
+                }
+                if ($conn2->guid == $conn->otherguid) {
+                    $otherrelay = $conn2->relay;
+                    break;
+                }
+                if ($conn2->otherguid == $conn->guid) {
+                    $relay = $conn2->otherrelay;
+                    break;
+                }
+                if ($conn2->guid == $conn->guid) {
+                    $relay = $conn2->relay;
+                    break;
+                }
+            }
+            $o = (object) [
+                'otherguid' => $conn->otherguid,
+                'othername' => $conn->othername,
+                'guid' => $conn->guid,
+                'otherrelay' => $otherrelay,
+                'relay' => $relay,
+                'otherlong' => $conn->otherlong,
+                'otherlat' => $conn->otherlat,
+                'long' => $firstVote->long,
+                'lat' => $firstVote->lat,
+            ];
+            array_push($pendingConn, $o);
+            array_push($seenVoteLong, $conn->otherlong);
+        }
+        while (count($pendingConn) > 0) {
+            $iterationItemCount = count($pendingConn);
+            $rowLevel++;
+            while ($iterationItemCount > 0) {
+                $iterationItemCount--;
+                $conn = array_shift($pendingConn);
+                // add the item for the destination to our graph.
+                if ($conn->otherrelay != "") {
+                    array_push($markers, 
+                        (object) [
+                            "long" => $conn->otherlong,
+                            "lat" => $conn->otherlat,
+                            "hop" => $rowLevel,
+                            "name" => $conn->othername ]
+                    );
+        
+                } else {
+                }
+                array_push($polylines, 
+                    (object) [
+                        "long" => $conn->long,
+                        "lat" => $conn->lat,
+                        "otherlong" => $conn->otherlong,
+                        "otherlat" => $conn->otherlat ]
+                );
+
+                // see if we have this relay in our `seenAuthRelays` list.
+                foreach($seenAuthRelays as $seenRelay) {
+                    if ($seenRelay->relay == $conn->otherrelay) {
+                        array_push($seenVoteRelays, $rowsCount);
+                        break;
+                    }
+                }
+                $rowsCount++;
+                // find all the links from otherguid to other relays and add them to the pending connections array.
+                for ($i = count($connectionsArray)-1; $i >= 0; $i--){
+                    if (array_search($connectionsArray[$i]->otherlong, $seenVoteLong)!=FALSE || $connectionsArray[$i]->otherlong=="") {
+                        continue;
+                    }
+                    if ($connectionsArray[$i]->otherlong > 90 || $connectionsArray[$i]->otherlong < -90 ) {
+                        continue;
+                    }
+                    if ($conn->otherguid == $connectionsArray[$i]->guid) {
+                        array_push($seenVoteLong, $connectionsArray[$i]->otherlong);
+                        array_push($pendingConn, (object) [
+                            'otherguid' => $connectionsArray[$i]->otherguid,
+                            'othername' => $connectionsArray[$i]->othername,
+                            'guid' => $connectionsArray[$i]->guid,
+                            'otherrelay' => $connectionsArray[$i]->otherrelay,
+                            'relay' => $connectionsArray[$i]->relay,
+                            'otherlong' => $connectionsArray[$i]->otherlong,
+                            'otherlat' => $connectionsArray[$i]->otherlat,
+                            'long' => $conn->otherlong,
+                            'lat' => $conn->otherlat,
+                        ]);
+                        unset($connectionsArray[$i]);
+                        $connectionsArray = array_values($connectionsArray);
+                    } else if ($conn->otherguid == $connectionsArray[$i]->otherguid) {
+                        unset($connectionsArray[$i]);
+                        $connectionsArray = array_values($connectionsArray);
+                    }
+                }
+
+            }
+        };
+        $i = 1;
+        // generate the polylines.
+        foreach($polylines as $polyline) {
+            $i++;
+            ?>
+            var polyline = new google.maps.Polyline({
+                path: [ new google.maps.LatLng(<?=$polyline->long?>,<?=$polyline->lat?>),
+                        new google.maps.LatLng(<?=$polyline->otherlong?>,<?=$polyline->otherlat?>)],
+                icons: [{
+                    icon: {
+                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                    },
+                    offset: '100%'
+                }],
+                strokeColor: '#FF0000',
+                title: <?=$i?>,
+                strokeOpacity: 1.0,
+                strokeWeight: 2,
+                map: mapmap,
+                geodesic: true });
+            <?
+        }
+
+        foreach($markers as $marker) {
+            ?>
+            var marker = new google.maps.Marker({
+                position: new google.maps.LatLng(<?=$marker->long?>,<?=$marker->lat?>),
+                label: '<?=$marker->hop?>',
+                map: mapmap
+            });
+            <?
+        }
+    ?>
+
+  };
+  </script>
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBMLpjyj_QSi1h84r1i8SZqsM3Jzfre5aM&callback=initMap" type="text/javascript"></script>
+
+<?
+        }
+  ?>
+  
+

@@ -21,9 +21,20 @@ class RoundAuthenticatorGraph extends UserProtected
         $sourcehost = $request->query()->get('sourcehost');
         $graphstyle = $request->query()->get('graphstyle');
 
+        
+        if ($graphstyle == "2") {
+            $vote = $this->votelocation();
+            $relayconnection = $this->relayconnectionlocation();
+            $connection = $this->connectionlocation();
+        } else {
+            $vote = $this->vote();
+            $relayconnection = $this->relayconnection();
+            $connection = $this->connection();
+        }
+
         if ($sourcehost == '') {
             // we don't have any information regarding the source of the vote.
-            $votes = $this->vote()->query()->
+            $votes = $vote->query()->
                 where('round', '=', intval($roundNumber))->
                 andWhere('step', '=', 2)->
                 limit(1)->
@@ -37,7 +48,7 @@ class RoundAuthenticatorGraph extends UserProtected
 
         } else {
             // we know from which host the transaction came from.
-            $votes = $this->vote()->query()->
+            $votes = $vote->query()->
                 where('round', '=', intval($roundNumber))->
                 andWhere('sender', '=', $auth)->
                 andWhere('step', '=', 2)->
@@ -58,7 +69,7 @@ class RoundAuthenticatorGraph extends UserProtected
         $startTimestamp = $startTimestamp->format("Y-m-d H:i:s") . '-05';
 
         // retrieve the connections map for the above timestamp.
-        $connections = $this->relayconnection()->query()-> 
+        $connections = $relayconnection->query()-> 
             where('quanttime', 'between', $startTimestamp, $firstVoteTimestamp)->
             find();
 
@@ -67,13 +78,13 @@ class RoundAuthenticatorGraph extends UserProtected
             $source_guid = '';
             if (count($explode_source_host) > 0) {
                 $source_guid = $explode_source_host[0];
-                $voterConnections = $this->connection()->query()-> 
+                $voterConnections = $connection->query()-> 
                     where('quanttime', 'between', $startTimestamp, $firstVoteTimestamp)->
                     andWhere('guid', '=', $source_guid)->
                     find();
             } else {
                 $source_guid = "unknown";
-                $voterConnections = $this->connection()->query()-> 
+                $voterConnections = $connection->query()-> 
                     where('quanttime', 'between', $startTimestamp, $firstVoteTimestamp)->
                     andWhere('name', '=', $sourcehost)->
                     find();
@@ -91,7 +102,11 @@ class RoundAuthenticatorGraph extends UserProtected
                         'name' => $sourcehost,
                         'guid' => $source_guid,
                         'otherguid' => '',
-                        'othername' => ''
+                        'othername' => '',
+                        'otherlong' => 0,
+                        'otherlat' => 0,
+                        'long' => 0,
+                        'lat' => 0
                     ]
                     ];
             }
@@ -115,6 +130,7 @@ class RoundAuthenticatorGraph extends UserProtected
             'voterConnections' => $voterConnections,
             'seenAuthRelays' => $seenAuthRelays,
             'graphstyle' => $graphstyle,
+            'firstVote' => $firstVote,
         ));
     }
 
@@ -133,6 +149,14 @@ class RoundAuthenticatorGraph extends UserProtected
     {
         return $this->components->orm()->repository('vote');
     }
+    
+    /**
+     * @return UserRepository
+     */
+    protected function votelocation()
+    {
+        return $this->components->orm()->repository('votelocation');
+    }
 
     /**
      * @return UserRepository
@@ -141,12 +165,26 @@ class RoundAuthenticatorGraph extends UserProtected
     {
         return $this->components->orm()->repository('connection');
     }
-
+    /**
+     * @return UserRepository
+     */
+    protected function connectionlocation()
+    {
+        return $this->components->orm()->repository('connectionlocation');
+    }
      /**
      * @return UserRepository
      */
     protected function relayconnection()
     {
         return $this->components->orm()->repository('relayconnection');
+    }
+
+       /**
+     * @return UserRepository
+     */
+    protected function relayconnectionlocation()
+    {
+        return $this->components->orm()->repository('relayconnectionlocation');
     }
 }
