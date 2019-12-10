@@ -350,7 +350,7 @@
 </style>
 <script type="text/javascript">
     var polylines = [];
-    document.getElementById('map_div').style.display = "block";
+    
     document.getElementById('map_div').style.height = "75%";
     var mapmap;
 
@@ -361,6 +361,7 @@
         });
 
         drawMap();
+        document.getElementById('map_div').style.display = "block";
     }    
 
 
@@ -372,6 +373,7 @@
                         "long" => $firstVote->long,
                         "lat" => $firstVote->lat,
                         "hop" => 0,
+                        "seen" => true,
                         "name" => $firstVote->sendertelemetryid ]
                 );
 
@@ -443,22 +445,34 @@
                 $conn = array_shift($pendingConn);
                 // add the item for the destination to our graph.
                 if ($conn->otherrelay != "") {
+                    $seen = false;
+                    // see if we have this relay in our `seenAuthRelays` list.
+                    foreach($seenAuthRelays as $seenRelay) {
+                        if ($seenRelay->relay == $conn->otherrelay) {
+                            $seen = true;
+                            break;
+                        }
+                    }
+
                     array_push($markers, 
                         (object) [
                             "long" => $conn->otherlong,
                             "lat" => $conn->otherlat,
                             "hop" => $rowLevel,
-                            "name" => $conn->othername ]
+                            "name" => $conn->othername,
+                            "seen" => $seen ]
                     );
         
                 } else {
                 }
+                
                 array_push($polylines, 
                     (object) [
                         "long" => $conn->long,
                         "lat" => $conn->lat,
                         "otherlong" => $conn->otherlong,
-                        "otherlat" => $conn->otherlat ]
+                        "otherlat" => $conn->otherlat
+                         ]
                 );
 
                 // see if we have this relay in our `seenAuthRelays` list.
@@ -522,21 +536,45 @@
                 geodesic: true });
             <?
         }
-
+        $i = 1;
         foreach($markers as $marker) {
-            ?>
-            var marker = new google.maps.Marker({
+            ?>{
+            var marker<?=$i?> = new google.maps.Marker({
                 position: new google.maps.LatLng(<?=$marker->long?>,<?=$marker->lat?>),
-                label: '<?=$marker->hop?>',
+                animation: google.maps.Animation.DROP,
+                label: {
+                    text: '<?=$marker->hop?>',
+                    <? if ($marker->seen == true) { ?>
+                    color: 'blue',
+                    <? } else { ?>
+                        color: 'black',
+                    <? } ?>
+                },
+                /*icon: {
+                  path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+                  fillColor: "#B404B4",
+                  fillOpacity: 0.5,
+                  strokeWeight:2,
+                  strokeColor:"#B40404"
+                },*/
                 map: mapmap
             });
+            //marker<?=$i?>.addListener('click', function (){toggleBounce(marker<?=$i?>);});
+            }
             <?
         }
     ?>
 
   };
+  function toggleBounce(m) {
+  if (m.getAnimation() !== null) {
+    m.setAnimation(null);
+  } else {
+    m.setAnimation(google.maps.Animation.BOUNCE);
+  }
+}
   </script>
-<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBMLpjyj_QSi1h84r1i8SZqsM3Jzfre5aM&callback=initMap" type="text/javascript"></script>
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap" type="text/javascript"></script>
 
 <?
         }
