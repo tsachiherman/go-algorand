@@ -591,6 +591,85 @@ func getChangedAssetIndices(creator basics.Address, delta accountDelta) map[basi
 	return assetMods
 }
 
+func totalsNewRound(tx *sql.Tx, updates map[basics.Address]accountDelta, rewardsLevel uint64, proto config.ConsensusParams) (err error) {
+	var ot basics.OverflowTracker
+	totals, err := accountsTotals(tx, false)
+	if err != nil {
+		return
+	}
+
+	totals.applyRewards(rewardsLevel, &ot)
+
+	for _, data := range updates {
+		totals.delAccount(proto, data.old, &ot)
+		totals.addAccount(proto, data.new, &ot)
+	}
+
+	if ot.Overflowed {
+		err = fmt.Errorf("overflow computing totals")
+		return
+	}
+
+	err = accountsPutTotals(tx, totals, false)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func accountsNewRounds(tx *sql.Tx, updates map[basics.Address]accountDelta) (err error) {
+	deleteStmt, err := tx.Prepare("DELETE FROM accountbase WHERE address=?")
+	if err != nil {
+		return
+	}
+	defer deleteStmt.Close()
+
+	replaceStmt, err := tx.Prepare("REPLACE INTO accountbase (address, data) VALUES (?, ?)")
+	if err != nil {
+		return
+	}
+	defer replaceStmt.Close()
+
+	insertAssetIdxStmt, err := tx.Prepare("INSERT INTO assetcreators (asset, creator) VALUES (?, ?)")
+	if err != nil {
+		return
+	}
+	defer insertAssetIdxStmt.Close()
+
+	deleteAssetIdxStmt, err := tx.Prepare("DELETE FROM assetcreators WHERE asset=?")
+	if err != nil {
+		return
+	}
+	defer deleteAssetIdxStmt.Close()
+
+	for addr, data := range updates {
+		if data.new.IsZero() {
+			// prune empty accounts
+			_, err = deleteStmt.Exec(addr[:])
+		} else {
+			_, err = replaceStmt.Exec(addr[:], protocol.Encode(&data.new))
+		}
+		if err != nil {
+			return
+		}
+
+		adeltas := getChangedAssetIndices(addr, data)
+		for aidx, delta := range adeltas {
+			if delta.created {
+				_, err = insertAssetIdxStmt.Exec(aidx, addr[:])
+			} else {
+				_, err = deleteAssetIdxStmt.Exec(aidx)
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	return
+}
+
 func accountsNewRound(tx *sql.Tx, updates map[basics.Address]accountDelta, rewardsLevel uint64, proto config.ConsensusParams) (err error) {
 	var ot basics.OverflowTracker
 	totals, err := accountsTotals(tx, false)

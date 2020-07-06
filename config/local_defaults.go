@@ -54,6 +54,7 @@ var defaultLocal = Local{
 	EnableProcessBlockStats:               false,
 	EnableProfiler:                        false,
 	EnableRequestLogger:                   false,
+	EnableStartupLedgerConsistencyCheck:   false,
 	EnableTopAccountsReporting:            false,
 	EndpointAddress:                       "127.0.0.1:0",
 	FallbackDNSResolverAddress:            "",

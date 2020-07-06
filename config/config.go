@@ -324,6 +324,10 @@ type Local struct {
 	// EnableDeveloperAPI enables teal/compile, teal/dryrun API endpoints.
 	// This functionlity is disabled by default.
 	EnableDeveloperAPI bool `version[9]:"false"`
+
+	// EnableStartupLedgerConsistencyCheck enables the ledger consistency check upon startup.
+	// This functionlity is disabled by default as it slows down the startup time.
+	EnableStartupLedgerConsistencyCheck bool `version[9]:"false"`
 }
 
 // Filenames of config files within the configdir (e.g. ~/.algorand)

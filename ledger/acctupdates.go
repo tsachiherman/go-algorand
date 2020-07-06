@@ -17,6 +17,7 @@
 package ledger
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -102,6 +103,11 @@ type accountUpdates struct {
 	// catchpointFileHistoryLength defines how many catchpoint files we want to store back.
 	// 0 means don't store any, -1 mean unlimited and positive number suggest the number of most recent catchpoint files.
 	catchpointFileHistoryLength int
+
+	// enableConsistencyCheck enables the merkle trie consistency check by rebuilding a parallel copy of the trie and comparing the root hash
+	// If all ok, it will log an info message with the root hash. If mismatch is found, it will provide some information to the log file with an
+	// error level severity.
+	enableConsistencyCheck bool
 
 	// dynamic variables
 
@@ -201,6 +207,7 @@ func (au *accountUpdates) initialize(cfg config.Local, dbPathPrefix string, gene
 	au.dbDirectory = filepath.Dir(dbPathPrefix)
 	au.archivalLedger = cfg.Archival
 	au.catchpointInterval = cfg.CatchpointInterval
+	au.enableConsistencyCheck = cfg.EnableStartupLedgerConsistencyCheck
 	au.catchpointFileHistoryLength = cfg.CatchpointFileHistoryLength
 	if cfg.CatchpointFileHistoryLength < -1 {
 		au.catchpointFileHistoryLength = -1
@@ -231,6 +238,10 @@ func (au *accountUpdates) loadFromDisk(l ledgerForTracker) error {
 		au.generateCatchpoint(basics.Round(writingCatchpointRound), au.lastCatchpointLabel, writingCatchpointDigest, time.Duration(0))
 	}
 
+	// if we want to perform the merkle trie consistency check, perform the check now.
+	if au.enableConsistencyCheck && au.catchpointInterval > 0 {
+		au.validateTrie(context.Background())
+	}
 	return nil
 }
 
@@ -640,6 +651,14 @@ func (au *accountUpdates) initializeCaches(lastBalancesRound, lastestBlockRound,
 	var blk bookkeeping.Block
 	var delta StateDelta
 
+	// under normal usage, the difference between lastBalancesRound and lastestBlockRound would be around 320 blocks.
+	// however, if we delete the tracker database and attempt to reconstruct it from the blocks database, the difference can
+	// be much much higher. The logic below would add periodic logging in that case.
+	balancesReconstruction := (lastestBlockRound-lastBalancesRound > 10000)
+	if balancesReconstruction {
+		au.log.Infof("accountUpdates initializing balances database reconstruction starting block %d and up to %d", lastBalancesRound, lastestBlockRound)
+	}
+
 	for lastBalancesRound < lastestBlockRound {
 		next := lastBalancesRound + 1
 
@@ -658,6 +677,21 @@ func (au *accountUpdates) initializeCaches(lastBalancesRound, lastestBlockRound,
 
 		if next == basics.Round(writingCatchpointRound) {
 			catchpointBlockDigest = blk.Digest()
+		}
+
+		// are we rebuilding the database ?
+		if balancesReconstruction {
+			// if we're rebuilding our database, write a log entry every 10K round so that we can monitor the progress.
+			if lastBalancesRound%10000 == 0 {
+				au.log.Infof("accountUpdates initializing balances database, wrote block %d out of %d", lastBalancesRound, lastestBlockRound)
+			}
+			if uint64(len(au.deltas)) > 2*au.protos[0].MaxBalLookback {
+				au.accountsWriting.Add(1)
+				au.commitRound(uint64(len(au.deltas))-au.protos[0].MaxBalLookback, au.dbRound, basics.Round(au.protos[0].MaxBalLookback))
+			}
+			/*if lastBalancesRound > 7257808 {
+				panic("we've reached the destination round")
+			}*/
 		}
 	}
 	return
@@ -1011,7 +1045,7 @@ func (au *accountUpdates) commitRound(offset uint64, dbRound basics.Round, lookb
 			}
 			treeTargetRound = dbRound + basics.Round(offset)
 		}
-		for i := uint64(0); i < offset; i++ {
+		/*for i := uint64(0); i < offset; i++ {
 			err = accountsNewRound(tx, deltas[i], roundTotals[i+1].RewardsLevel, protos[i+1])
 			if err != nil {
 				return err
@@ -1021,7 +1055,24 @@ func (au *accountUpdates) commitRound(offset uint64, dbRound basics.Round, lookb
 			if err != nil {
 				return err
 			}
+		}*/
+		for i := uint64(0); i < offset; i++ {
+			err = totalsNewRound(tx, deltas[i], roundTotals[i+1].RewardsLevel, protos[i+1])
+			if err != nil {
+				return err
+			}
+
+			err = au.accountsUpdateBalances(deltas[i])
+			if err != nil {
+				return err
+			}
 		}
+
+		err = accountsNewRounds(tx, au.combineDeltaGroups(deltas[:offset]))
+		if err != nil {
+			return err
+		}
+
 		err = updateAccountsRound(tx, dbRound+basics.Round(offset), treeTargetRound)
 		if isCatchpointRound {
 			trieBalancesHash, err = au.balancesTrie.RootHash()
@@ -1110,6 +1161,42 @@ func (au *accountUpdates) commitRound(offset uint64, dbRound basics.Round, lookb
 		au.generateCatchpoint(basics.Round(offset)+dbRound+lookback, catchpointLabel, committedRoundDigest, updatingBalancesDuration)
 	}
 
+}
+
+func (au *accountUpdates) combineDeltaGroups(delta []map[basics.Address]accountDelta) (deltaGroups map[basics.Address]accountDelta) {
+	deltaGroups = make(map[basics.Address]accountDelta, len(delta[0]))
+
+	// first group is always the same, so copy it.
+	for addr, adelta := range delta[0] {
+		deltaGroups[addr] = adelta
+	}
+
+	for srcDeltaIdx := 1; srcDeltaIdx < len(delta); srcDeltaIdx++ {
+		// find if the group items in delta[srcDeltaIdx] can be merged into the ones
+		for addr, adelta := range delta[srcDeltaIdx] {
+			if adelta.new.IsZero() {
+				// this is a delete operation
+				if _, had := deltaGroups[addr]; had {
+					// if we had it, update the new value to get deleted.
+					deltaGroups[addr] = accountDelta{old: deltaGroups[addr].old, new: adelta.new}
+				} else {
+					// if we did not had it before, add it. ( i.e. add a delete operation )
+					deltaGroups[addr] = adelta
+				}
+			} else {
+				// this is an update operation.
+				if _, had := deltaGroups[addr]; had {
+					// if we had it, update the new value.
+					deltaGroups[addr] = accountDelta{old: deltaGroups[addr].old, new: adelta.new}
+				} else {
+					// if we did not had it before, add it. ( i.e. add an update operation )
+					deltaGroups[addr] = adelta
+				}
+			}
+		}
+	}
+
+	return
 }
 
 func (au *accountUpdates) latest() basics.Round {
@@ -1261,5 +1348,156 @@ func (au *accountUpdates) saveCatchpointFile(round basics.Round, fileName string
 			return fmt.Errorf("unable to delete old catchpoint entry '%s' : %v", fileToDelete, err)
 		}
 	}
+	return
+}
+
+// validateTrie performs self-consistency check between the merke trie and the balances.
+// this method is expected to take a long time to run, and should be used only on startup and
+// only when explicitly requested by the end user.
+func (au *accountUpdates) validateTrie(ctx context.Context) {
+	var regeneratedTrieHash, currentTrieHash crypto.Digest
+	var trieStats merkletrie.Stats
+	var accountsCount uint
+	var emptyAccounts string
+	err := au.dbs.wdb.Atomic(func(tx *sql.Tx) error {
+		resetCatchpointStagingBalances(ctx, tx, true)
+
+		// create the merkle trie for the balances
+		committer, err := makeMerkleCommitter(tx, true)
+		if err != nil {
+			return fmt.Errorf("validateTrie was unable to make a staging MerkleCommitter: %v", err)
+		}
+		trie, err := merkletrie.MakeTrie(committer, trieCachedNodesCount)
+		if err != nil {
+			return fmt.Errorf("validateTrie was unable to create a staging MakeTrie: %v", err)
+		}
+
+		accountIdx := 0
+		for {
+			bal, err := encodedAccountsRange(tx, accountIdx, trieRebuildAccountChunkSize)
+			if err != nil {
+				return err
+			}
+			if len(bal) == 0 {
+				break
+			}
+			for _, balance := range bal {
+				var accountData basics.AccountData
+				err = protocol.Decode(balance.AccountData, &accountData)
+				if err != nil {
+					return err
+				}
+				hash := accountHashBuilder(balance.Address, accountData, balance.AccountData)
+				added, err := trie.Add(hash)
+				if err != nil {
+					return fmt.Errorf("validateTrie was unable to add changes to trie: %v", err)
+				}
+				if !added {
+					au.log.Warnf("attempted to add duplicate hash '%v' to merkle trie.", hash)
+				}
+				accountsCount++
+			}
+
+			// this trie Evict will commit using the current transaction.
+			// if anything goes wrong, it will still get rolled back.
+			_, err = trie.Evict(true)
+			if err != nil {
+				return fmt.Errorf("validateTrie was unable to commit changes to staging trie: %v", err)
+			}
+			if len(bal) < trieRebuildAccountChunkSize {
+				break
+			}
+			accountIdx += trieRebuildAccountChunkSize
+		}
+
+		regeneratedTrieHash, err = trie.RootHash()
+		if err != nil {
+			return err
+		}
+
+		resetCatchpointStagingBalances(ctx, tx, false)
+
+		// create the merkle trie for the balances
+		committer, err = makeMerkleCommitter(tx, false)
+		if err != nil {
+			return fmt.Errorf("validateTrie was unable to make a MerkleCommitter: %v", err)
+		}
+		au.balancesTrie.SetCommitter(committer)
+
+		currentTrieHash, err = au.balancesTrie.RootHash()
+		if err != nil {
+			return err
+		}
+
+		if bytes.Compare(regeneratedTrieHash[:], currentTrieHash[:]) != 0 {
+			trieStats, err = au.balancesTrie.GetStats()
+			if err != nil {
+				return err
+			}
+			// check if we can find a list of accounts that had zero balance on the merkle trie.
+
+			/*accountIdx := 0
+			for {
+				bal, err := encodedAccountsRange(tx, accountIdx, trieRebuildAccountChunkSize)
+				if err != nil {
+					return err
+				}
+				if len(bal) == 0 {
+					break
+				}
+				for _, balance := range bal {
+					var accountData basics.AccountData
+					balance.AccountData = protocol.Encode(&accountData)
+
+					hash := accountHashBuilder(balance.Address, accountData, balance.AccountData)
+					deleted, err := au.balancesTrie.Delete(hash)
+					if err != nil {
+						return fmt.Errorf("validateTrie was unable to delete changes to trie: %v", err)
+					}
+					if deleted {
+						emptyAccounts = fmt.Sprintf("%saccount %s is empty.", emptyAccounts, balance.Address)
+					}
+				}
+
+				if len(bal) < trieRebuildAccountChunkSize {
+					break
+				}
+				accountIdx += trieRebuildAccountChunkSize
+			}*/
+
+			var zeroAccountData basics.AccountData
+			encodedZeroAccountData := protocol.Encode(&zeroAccountData)
+			for r := au.dbRound - 1000000; r < au.dbRound; r++ {
+				blk, err := au.ledger.Block(r)
+				if err != nil {
+					break
+				}
+				for _, tx := range blk.Payset {
+					if !tx.Txn.Header.Src().IsZero() {
+						hash := accountHashBuilder(tx.Txn.Header.Src(), zeroAccountData, encodedZeroAccountData)
+						deleted, err := au.balancesTrie.Delete(hash)
+						if err != nil {
+							return fmt.Errorf("validateTrie was unable to delete changes to trie: %v", err)
+						}
+						if deleted {
+							emptyAccounts = fmt.Sprintf("%saccount %s is empty.", emptyAccounts, tx.Txn.Header.Src())
+						}
+					}
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		au.log.Errorf("accountUpdates: validateTrie errored : %v", err)
+		return
+	}
+
+	if bytes.Compare(regeneratedTrieHash[:], currentTrieHash[:]) == 0 {
+		au.log.Infof("accountUpdates(%d): validateTrie found a match between the stored balances trie root hash (%s) and the one that would be generated by iterating over the accounts", au.dbRound, currentTrieHash.String())
+		return
+	}
+	au.log.Errorf("accountUpdates(%d): validateTrie found a mismatch between the stored balances trie root hash (%s) and the one that would be generated by iterating over the accounts (%s). %d accounts found in database, trie stats are %v. %s", au.dbRound, currentTrieHash.String(), regeneratedTrieHash.String(), accountsCount, trieStats, emptyAccounts)
 	return
 }
