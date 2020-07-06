@@ -36,6 +36,7 @@ import (
 	"github.com/algorand/go-algorand/crypto/merkletrie"
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/bookkeeping"
+	"github.com/algorand/go-algorand/data/transactions"
 	"github.com/algorand/go-algorand/logging"
 	"github.com/algorand/go-algorand/logging/telemetryspec"
 	"github.com/algorand/go-algorand/protocol"
@@ -1473,8 +1474,11 @@ func (au *accountUpdates) validateTrie(ctx context.Context) {
 					break
 				}
 				for _, tx := range blk.Payset {
-					if !tx.Txn.Header.Src().IsZero() {
-						hash := accountHashBuilder(tx.Txn.Header.Src(), zeroAccountData, encodedZeroAccountData)
+					for _, addr := range tx.Txn.RelevantAddrs(transactions.SpecialAddresses{}) {
+						if addr.IsZero() {
+							continue
+						}
+						hash := accountHashBuilder(addr, zeroAccountData, encodedZeroAccountData)
 						deleted, err := au.balancesTrie.Delete(hash)
 						if err != nil {
 							return fmt.Errorf("validateTrie was unable to delete changes to trie: %v", err)
