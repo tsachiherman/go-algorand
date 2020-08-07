@@ -32,28 +32,34 @@ type dumpLogger struct {
 	*bytes.Buffer
 }
 
-func (logger *dumpLogger) dump() {
-	logger.Error(logger.String())
+func (logger *dumpLogger) dumpAsync(callstackBuffer []byte) {
+	deadlockMessageBytes := logger.Bytes()
+	// create a copy of the deadlockMessageBytes, so that if it gets modified it won't affect the printing.
+	// strings in go are immutable, so it would create a copy.
+	message := string(deadlockMessageBytes)
+	go func(message string, callstack string) {
+		logger.Error(message)
+		logger.Panic("potential deadlock detected here : %v", callstackBuffer)
+	}(message, string(callstackBuffer))
+
 }
 
-var logger = dumpLogger{Logger: logging.Base(), Buffer: bytes.NewBuffer(make([]byte, 0))}
-
-func setupDeadlockLogger() {
+func setupDeadlockLogger(syslogger logging.Logger, stdErr *os.File) {
+	var logger = dumpLogger{Logger: syslogger, Buffer: bytes.NewBuffer(make([]byte, 0))}
 	deadlock.Opts.LogBuf = logger
 	deadlock.Opts.OnPotentialDeadlock = func() {
-		logger.dump()
-
 		// Capture all goroutine stacks and log to stderr
-		var buf []byte
+		var callstackBuffer []byte
 		bufferSize := 256 * 1024
 		for {
-			buf = make([]byte, bufferSize)
-			if runtime.Stack(buf, true) < bufferSize {
+			callstackBuffer = make([]byte, bufferSize)
+			if runtime.Stack(callstackBuffer, true) < bufferSize {
 				break
 			}
 			bufferSize *= 2
 		}
-		fmt.Fprintln(os.Stderr, string(buf))
-		logger.Panic("potential deadlock detected")
+		fmt.Fprintln(stdErr, string(callstackBuffer))
+
+		logger.dumpAsync(callstackBuffer)
 	}
 }

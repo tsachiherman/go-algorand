@@ -79,7 +79,7 @@ func (s *Server) Initialize(cfg config.Local, phonebookAddresses []string) error
 	s.log.SetOutput(logWriter)
 	s.log.SetJSONFormatter()
 	s.log.SetLevel(logging.Level(cfg.BaseLoggerDebugLevel))
-	setupDeadlockLogger()
+	setupDeadlockLogger(logging.Base(), os.Stderr)
 
 	// configure the deadlock detector library
 	switch {
