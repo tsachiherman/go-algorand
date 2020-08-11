@@ -1257,6 +1257,10 @@ func (au *accountUpdates) commitSyncer(deferedCommits chan deferedCommit) {
 			}
 			return
 		}
+		// if we have no more requests in the deferedCommits channel, go ahead and perform a checkpoint.
+		if len(deferedCommits) == 0 {
+			au.checkpoint()
+		}
 	}
 }
 
@@ -1666,4 +1670,15 @@ func (au *accountUpdates) vacuumDatabase(ctx context.Context) (err error) {
 
 	au.log.EventWithDetails(telemetryspec.Accounts, telemetryspec.BalancesAccountVacuumEvent, vacuumTelemetryStats)
 	return
+}
+
+func (au *accountUpdates) checkpoint() {
+	// try to perform the checkpoint.
+	err := au.dbs.wdb.Atomic(func(ctx context.Context, tx *sql.Tx) (err error) {
+		err = db.WALCheckpoint(ctx, tx, db.WALCheckpointModeTruncate)
+		return
+	})
+	if err != nil {
+		au.log.Warnf("accountUpdates was unable to complete the checkpoint : %v", err)
+	}
 }

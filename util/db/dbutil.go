@@ -72,6 +72,20 @@ type VacuumStats struct {
 	SizeAfter uint64
 }
 
+// WALCheckpointMode defines the various checkpoint modes supported by SQLlite
+type WALCheckpointMode uint32
+
+const (
+	// WALCheckpointModePassive checkpoint as many frames as possible without waiting for any database readers or writers to finish. Sync the db file if all frames in the log are checkpointed.
+	WALCheckpointModePassive = WALCheckpointMode(0)
+	// WALCheckpointModeFull This mode blocks (invokes the busy-handler callback) until there is no database writer and all readers are reading from the most recent database snapshot. It then checkpoints all frames in the log file and syncs the database file. FULL blocks concurrent writers while it is running, but readers can proceed.
+	WALCheckpointModeFull = WALCheckpointMode(1)
+	// WALCheckpointModeRestart This mode works the same way as FULL with the addition that after checkpointing the log file it blocks (calls the busy-handler callback) until all readers are finished with the log file. This ensures that the next client to write to the database file restarts the log file from the beginning. RESTART blocks concurrent writers while it is running, but allowed readers to proceed.
+	WALCheckpointModeRestart = WALCheckpointMode(2)
+	// WALCheckpointModeTruncate This mode works the same way as RESTART with the addition that the WAL file is truncated to zero bytes upon successful completion.
+	WALCheckpointModeTruncate = WALCheckpointMode(3)
+)
+
 // txExecutionContext contains the data that is associated with every created transaction
 // before sending it to the user-defined callback. This allows the callback function to
 // make changes to the execution setting of an ongoing transaction.
@@ -440,6 +454,22 @@ func (db *Accessor) GetPageSize(ctx context.Context) (pageSize uint64, err error
 	if err == sql.ErrNoRows {
 		err = fmt.Errorf("sqlite database doesn't support `PRAGMA page_size`")
 	}
+	return
+}
+
+// WALCheckpoint invokes a checkpoint on the WAL file using the requested mode
+func WALCheckpoint(ctx context.Context, tx *sql.Tx, mod WALCheckpointMode) (err error) {
+	checkpointModeCmd := map[WALCheckpointMode]string{
+		WALCheckpointModePassive:  "PRAGMA wal_checkpoint(PASSIVE)",
+		WALCheckpointModeFull:     "PRAGMA wal_checkpoint(FULL)",
+		WALCheckpointModeRestart:  "PRAGMA wal_checkpoint(RESTART)",
+		WALCheckpointModeTruncate: "PRAGMA wal_checkpoint(TRUNCATE)",
+	}
+	cmd, ok := checkpointModeCmd[mod]
+	if !ok {
+		return fmt.Errorf("invalid WALCheckpointMode specified : %v", mod)
+	}
+	_, err = tx.ExecContext(ctx, cmd)
 	return
 }
 
