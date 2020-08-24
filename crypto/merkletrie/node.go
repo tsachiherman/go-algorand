@@ -19,16 +19,18 @@ package merkletrie
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/algorand/go-algorand/crypto"
 )
 
 type node struct {
-	hash         []byte
-	children     []storedNodeIdentifier
-	childrenNext []byte
-	firstChild   byte
-	leaf         bool
+	hash            []byte
+	children        []storedNodeIdentifier
+	childrenNext    []byte
+	firstChild      byte
+	leaf            bool
+	skipRecalculate bool
 }
 
 func (n *node) stats(cache *merkleTrieCache, stats *Stats, depth int) (err error) {
@@ -64,6 +66,9 @@ func (n *node) stats(cache *merkleTrieCache, stats *Stats, depth int) (err error
 func (n *node) find(cache *merkleTrieCache, d []byte) (bool, error) {
 	if n.leaf {
 		return 0 == bytes.Compare(d, n.hash), nil
+	}
+	if int(d[0])+1 > len(n.children) {
+		return false, nil
 	}
 	childNodeID := n.children[d[0]]
 	if childNodeID == storedNodeIdentifierNull {
@@ -130,7 +135,7 @@ func (n *node) add(cache *merkleTrieCache, d []byte, path []byte) (nodeID stored
 		return nodeID, nil
 	}
 
-	if n.children[d[0]] == storedNodeIdentifierNull {
+	if int(d[0]) >= len(n.children) || n.children[d[0]] == storedNodeIdentifierNull {
 		// no such child.
 		var childNode *node
 		var childNodeID storedNodeIdentifier
@@ -138,7 +143,11 @@ func (n *node) add(cache *merkleTrieCache, d []byte, path []byte) (nodeID stored
 		childNode.leaf = true
 		childNode.hash = d[1:]
 
-		pnode, nodeID = n.duplicate(cache)
+		pnode, nodeID, err = n.duplicateAndReallocate(cache, d[0], path)
+		//pnode, nodeID, err = n.duplicate(cache, d[0])
+		if err != nil {
+			return storedNodeIdentifierNull, err
+		}
 		pnode.children[d[0]] = childNodeID
 
 		if pnode.firstChild > d[0] {
@@ -172,7 +181,10 @@ func (n *node) add(cache *merkleTrieCache, d []byte, path []byte) (nodeID stored
 		if err != nil {
 			return storedNodeIdentifierNull, err
 		}
-		pnode, nodeID = n.duplicate(cache)
+		pnode, nodeID, err = n.duplicate(cache, d[0])
+		if err != nil {
+			return storedNodeIdentifierNull, err
+		}
 		cache.deleteNode(n.children[d[0]])
 		pnode.children[d[0]] = updatedChild
 	}
@@ -186,7 +198,7 @@ func (n *node) add(cache *merkleTrieCache, d []byte, path []byte) (nodeID stored
 // 1. all node id allocations are done in incremental monolitic order, from the bottom up.
 // 2. hash calculations are being doing in node id incremental ordering
 func (n *node) calculateHash(cache *merkleTrieCache) error {
-	if n.leaf {
+	if n.leaf || n.skipRecalculate {
 		return nil
 	}
 	path := n.hash
@@ -229,7 +241,10 @@ func (n *node) remove(cache *merkleTrieCache, key []byte, path []byte) (nodeID s
 		return
 	}
 	if childNode.leaf {
-		pnode, nodeID = n.duplicate(cache)
+		pnode, nodeID, err = n.duplicate(cache, 0)
+		if err != nil {
+			return storedNodeIdentifierNull, err
+		}
 		// we are guaranteed to have other children, because our tree forbids nodes that have exactly one leaf child and no other children.
 		// we have one or more children, see if it's the first child:
 		if pnode.firstChild == key[0] {
@@ -267,7 +282,10 @@ func (n *node) remove(cache *merkleTrieCache, key []byte, path []byte) (nodeID s
 		if err != nil {
 			return storedNodeIdentifierNull, err
 		}
-		pnode, nodeID = n.duplicate(cache)
+		pnode, nodeID, err = n.duplicate(cache, 0)
+		if err != nil {
+			return storedNodeIdentifierNull, err
+		}
 		pnode.children[key[0]] = updatedChildNodeID
 	}
 	cache.deleteNode(childNodeID)
@@ -295,18 +313,107 @@ func (n *node) remove(cache *merkleTrieCache, key []byte, path []byte) (nodeID s
 }
 
 // duplicate creates a copy of the current node
-func (n *node) duplicate(cache *merkleTrieCache) (pnode *node, nodeID storedNodeIdentifier) {
+func (n *node) duplicateAndReallocate(cache *merkleTrieCache, ensureIndex byte, path []byte) (pnode *node, nodeID storedNodeIdentifier, err error) {
 	pnode, nodeID = cache.allocateNewNode()
 	pnode.firstChild = n.firstChild
 	pnode.hash = n.hash // the hash is safe for just copy without duplicate, since it's always being reallocated upon change.
 	pnode.leaf = n.leaf
-	if !pnode.leaf {
-		pnode.children = make([]storedNodeIdentifier, 256)
-		pnode.childrenNext = make([]byte, 256)
-		// copy the elements starting the first known entry.
-		copy(pnode.children[n.firstChild:], n.children[n.firstChild:])
-		copy(pnode.childrenNext[n.firstChild:], n.childrenNext[n.firstChild:])
+	if pnode.leaf {
+		return
 	}
+
+	itemsCount := byte(1)
+	lastChildIdx := int(n.firstChild)
+	for {
+		next := int(n.childrenNext[lastChildIdx])
+		if next == lastChildIdx {
+			break
+		}
+		itemsCount++
+		lastChildIdx = next
+	}
+
+	allocationSize := lastChildIdx + 1
+	if int(ensureIndex)+1 > allocationSize {
+		allocationSize = int(ensureIndex) + 1
+	}
+	if 1 == 0 {
+		fmt.Printf("allocating side %d\n", allocationSize)
+	}
+	pnode.children = make([]storedNodeIdentifier, allocationSize)
+	pnode.childrenNext = make([]byte, allocationSize)
+
+	// copy the elements starting the first known entry.
+	copy(pnode.childrenNext[n.firstChild:lastChildIdx+1], n.childrenNext[n.firstChild:lastChildIdx+1])
+	if itemsCount > 8 && cache.testNodeReallocation(n) {
+		// rebalance
+		childIdx := n.firstChild
+		for {
+			oldChildNode, err := cache.getNode(n.children[childIdx])
+			if err != nil {
+				return nil, storedNodeIdentifierNull, err
+			}
+			newChildNode, newChildNodeID := cache.allocateNewNode()
+
+			// copy the content of the "old" node.
+			if !oldChildNode.leaf {
+				newChildNode.hash = append(path, childIdx)
+			} else {
+				newChildNode.hash = oldChildNode.hash
+			}
+			newChildNode.leaf = oldChildNode.leaf
+			newChildNode.firstChild = oldChildNode.firstChild
+			newChildNode.children = oldChildNode.children
+			newChildNode.childrenNext = oldChildNode.childrenNext
+
+			cache.deleteNode(n.children[childIdx])
+			pnode.children[childIdx] = newChildNodeID
+
+			if n.childrenNext[childIdx] <= childIdx {
+				break
+			}
+			childIdx = n.childrenNext[childIdx]
+		}
+	} else {
+		copy(pnode.children[n.firstChild:lastChildIdx+1], n.children[n.firstChild:lastChildIdx+1])
+	}
+
+	return
+}
+
+// duplicate creates a copy of the current node
+func (n *node) duplicate(cache *merkleTrieCache, ensureIndex byte) (pnode *node, nodeID storedNodeIdentifier, err error) {
+	pnode, nodeID = cache.allocateNewNode()
+	pnode.firstChild = n.firstChild
+	pnode.hash = n.hash // the hash is safe for just copy without duplicate, since it's always being reallocated upon change.
+	pnode.leaf = n.leaf
+	if pnode.leaf {
+		return
+	}
+
+	itemsCount := byte(1)
+	lastChildIdx := int(n.firstChild)
+	for {
+		next := int(n.childrenNext[lastChildIdx])
+		if next == lastChildIdx {
+			break
+		}
+		itemsCount++
+		lastChildIdx = next
+	}
+
+	allocationSize := lastChildIdx + 1
+	if int(ensureIndex)+1 > allocationSize {
+		allocationSize = int(ensureIndex) + 1
+	}
+
+	pnode.children = make([]storedNodeIdentifier, allocationSize)
+	pnode.childrenNext = make([]byte, allocationSize)
+
+	// copy the elements starting the first known entry.
+	copy(pnode.childrenNext[n.firstChild:lastChildIdx+1], n.childrenNext[n.firstChild:lastChildIdx+1])
+	copy(pnode.children[n.firstChild:lastChildIdx+1], n.children[n.firstChild:lastChildIdx+1])
+
 	return
 }
 

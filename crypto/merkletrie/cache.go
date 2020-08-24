@@ -179,6 +179,7 @@ func (mtc *merkleTrieCache) loadPage(page uint64) (err error) {
 	if mtc.pageToNIDsPtr[page] == nil {
 		mtc.pageToNIDsPtr[page] = make(map[storedNodeIdentifier]*node, mtc.nodesPerPage)
 	}
+	mtc.cachedNodeCount -= len(mtc.pageToNIDsPtr[page])
 	for nodeID, pnode := range decodedNodes {
 		mtc.pageToNIDsPtr[page][nodeID] = pnode
 	}
@@ -456,4 +457,21 @@ func (mtc *merkleTrieCache) evict() (removedNodes int) {
 	}
 	removedNodes = removedNodes - mtc.cachedNodeCount
 	return
+}
+
+func (mtc *merkleTrieCache) testNodeReallocation(n *node) bool {
+	const threshold = 4
+	pages := make(map[uint64]bool)
+	idx := n.firstChild
+	for {
+		pages[uint64(n.children[idx])/uint64(mtc.nodesPerPage)] = true
+		if len(pages) > threshold {
+			return true
+		}
+		if n.childrenNext[idx] == idx {
+			break
+		}
+		idx = n.childrenNext[idx]
+	}
+	return len(pages) > threshold
 }
