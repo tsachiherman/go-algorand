@@ -76,12 +76,16 @@ type merkleTrieCache struct {
 	pagesPrioritizationMap map[uint64]*list.Element
 	// the page to load before the nextNodeID at init time. If zero, then nothing is being reloaded.
 	deferedPageLoad uint64
+
+	readOnlyPages           map[uint64]bool
+	readOnlyCachedNodeCount int
 }
 
 // initialize perform the initialization for the cache
 func (mtc *merkleTrieCache) initialize(mt *Trie, committer Committer, cachedNodeCountTarget int) {
 	mtc.mt = mt
 	mtc.pageToNIDsPtr = make(map[uint64]map[storedNodeIdentifier]*node)
+	mtc.readOnlyPages = make(map[uint64]bool)
 	mtc.txNextNodeID = storedNodeIdentifierNull
 	mtc.committer = committer
 	mtc.cachedNodeCount = 0
@@ -145,6 +149,48 @@ func (mtc *merkleTrieCache) getNode(nid storedNodeIdentifier) (pnode *node, err 
 	return
 }
 
+// getReadonlyNode retrieves the given node by its identifier, loading the page if it
+// cannot be found in cache, and returning an error if it's not in cache nor in committer.
+// The node is also being marked as "read-only", so it can be discarded once the hash calculation is done.
+func (mtc *merkleTrieCache) getReadonlyNode(nid storedNodeIdentifier) (pnode *node, err error) {
+	nodePage := uint64(nid) / uint64(mtc.nodesPerPage)
+	pageNodes := mtc.pageToNIDsPtr[nodePage]
+	if pageNodes != nil {
+		return pageNodes[nid], nil
+	}
+
+	if mtc.readOnlyPages[nodePage] == true {
+		return nil, ErrLoadedPageMissingNode
+	}
+
+	cachedNodesBefore := mtc.cachedNodeCount
+	err = mtc.loadPageHeaders(nodePage)
+	if err != nil {
+		return
+	}
+	var have bool
+	pageNodes = mtc.pageToNIDsPtr[nodePage]
+	if pnode, have = pageNodes[nid]; !have {
+		err = ErrLoadedPageMissingNode
+	}
+	mtc.readOnlyPages[nodePage] = true
+	mtc.readOnlyCachedNodeCount += mtc.cachedNodeCount - cachedNodesBefore
+	return
+}
+
+func (mtc *merkleTrieCache) discardReadonlyPages(discardAll bool) {
+	for page := range mtc.readOnlyPages {
+		if !discardAll && mtc.readOnlyCachedNodeCount <= 100000 /*mtc.cachedNodeCountTarget*/ {
+			return
+		}
+		// remove the page "page"
+		mtc.cachedNodeCount -= len(mtc.pageToNIDsPtr[page])
+		mtc.readOnlyCachedNodeCount -= len(mtc.pageToNIDsPtr[page])
+		delete(mtc.pageToNIDsPtr, page)
+		delete(mtc.readOnlyPages, page)
+	}
+}
+
 // prioritizeNode make sure to adjust the priority of the given node id.
 // nodes are prioritized based on the page the belong to.
 // a new page would be placed on front, and an older page would get moved
@@ -177,8 +223,39 @@ func (mtc *merkleTrieCache) loadPage(page uint64) (err error) {
 		return
 	}
 	if mtc.pageToNIDsPtr[page] == nil {
+		mtc.pageToNIDsPtr[page] = decodedNodes
+	} else {
+		mtc.cachedNodeCount -= len(mtc.pageToNIDsPtr[page])
+		for nodeID, pnode := range decodedNodes {
+			mtc.pageToNIDsPtr[page][nodeID] = pnode
+		}
+	}
+	mtc.cachedNodeCount += len(mtc.pageToNIDsPtr[page])
+
+	// if we've just loaded a deferred page, no need to reload it during the commit.
+	if mtc.deferedPageLoad != page {
+		mtc.deferedPageLoad = storedNodeIdentifierNull
+	}
+	return
+}
+
+// loadPage loads a give page id into memory.
+func (mtc *merkleTrieCache) loadPageHeaders(page uint64) (err error) {
+	pageBytes, err := mtc.committer.LoadPage(page)
+	if err != nil {
+		return
+	}
+	if len(pageBytes) == 0 {
+		return fmt.Errorf("page %d is missing", page)
+	}
+	decodedNodes, err := decodePageHeaders(pageBytes)
+	if err != nil {
+		return
+	}
+	if mtc.pageToNIDsPtr[page] == nil {
 		mtc.pageToNIDsPtr[page] = make(map[storedNodeIdentifier]*node, mtc.nodesPerPage)
 	}
+	mtc.cachedNodeCount -= len(mtc.pageToNIDsPtr[page])
 	for nodeID, pnode := range decodedNodes {
 		mtc.pageToNIDsPtr[page][nodeID] = pnode
 	}
@@ -310,7 +387,9 @@ func (mtc *merkleTrieCache) commit() error {
 		if err != nil {
 			return err
 		}
+		mtc.discardReadonlyPages(false)
 	}
+	mtc.discardReadonlyPages(true)
 
 	// store the pages.
 	for page, nodeIDs := range createdPages {
@@ -413,6 +492,38 @@ func decodePage(bytes []byte) (nodesMap map[storedNodeIdentifier]*node, err erro
 		}
 		walk += nodesIDLength
 		pnode, nodeLength := deserializeNode(bytes[walk:])
+		if nodeLength <= 0 {
+			return nil, ErrPageDecodingFailuire
+		}
+		walk += nodeLength
+		nodesMap[storedNodeIdentifier(nodeID)] = pnode
+	}
+
+	return nodesMap, nil
+}
+
+// decodePageHeaders decodes a byte array into a page that includes only the headers for each of the nodes.
+func decodePageHeaders(bytes []byte) (nodesMap map[storedNodeIdentifier]*node, err error) {
+	version, versionLength := binary.Uvarint(bytes[:])
+	if versionLength <= 0 {
+		return nil, ErrPageDecodingFailuire
+	}
+	if version != NodePageVersion {
+		return nil, ErrPageDecodingFailuire
+	}
+	nodesCount, nodesCountLength := binary.Varint(bytes[versionLength:])
+	if nodesCountLength <= 0 {
+		return nil, ErrPageDecodingFailuire
+	}
+	nodesMap = make(map[storedNodeIdentifier]*node)
+	walk := nodesCountLength + versionLength
+	for i := int64(0); i < nodesCount; i++ {
+		nodeID, nodesIDLength := binary.Uvarint(bytes[walk:])
+		if nodesIDLength <= 0 {
+			return nil, ErrPageDecodingFailuire
+		}
+		walk += nodesIDLength
+		pnode, nodeLength := deserializeNodeHeader(bytes[walk:])
 		if nodeLength <= 0 {
 			return nil, ErrPageDecodingFailuire
 		}

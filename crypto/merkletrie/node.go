@@ -195,7 +195,7 @@ func (n *node) calculateHash(cache *merkleTrieCache) error {
 	hashAccumulator = append(hashAccumulator, path...)
 	i := n.firstChild
 	for {
-		childNode, err := cache.getNode(n.children[i])
+		childNode, err := cache.getReadonlyNode(n.children[i])
 		if err != nil {
 			return err
 		}
@@ -380,5 +380,46 @@ func deserializeNode(buf []byte) (n *node, s int) {
 		prevChildIndex = childIndex
 	}
 	n.childrenNext[prevChildIndex] = prevChildIndex
+	return
+}
+
+// deserializeNodeHeader deserializes the node from a byte array
+// only the hash and leaf field are being decoded. The rest of the fields are ignored.
+// this function was created to accelerate and reduce memory consumption.
+func deserializeNodeHeader(buf []byte) (n *node, s int) {
+	n = &node{}
+	hashLength, hashLength2 := binary.Uvarint(buf[:])
+	if hashLength2 <= 0 {
+		return nil, hashLength2
+	}
+	n.hash = make([]byte, hashLength)
+	copy(n.hash, buf[hashLength2:hashLength2+int(hashLength)])
+	s = hashLength2 + int(hashLength)
+	n.leaf = (buf[s] == 0)
+	s++
+	if n.leaf {
+		return
+	}
+
+	first := true
+	prevChildIndex := byte(0)
+
+	for {
+		childIndex := buf[s]
+		s++
+		if childIndex <= prevChildIndex && !first {
+			break
+		}
+		if first {
+			first = false
+		}
+
+		_, nodeIDLength := binary.Uvarint(buf[s:])
+		if nodeIDLength <= 0 {
+			return nil, nodeIDLength
+		}
+		s += nodeIDLength
+		prevChildIndex = childIndex
+	}
 	return
 }
