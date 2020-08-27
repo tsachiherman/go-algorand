@@ -195,7 +195,7 @@ func (n *node) calculateHash(cache *merkleTrieCache) error {
 	hashAccumulator = append(hashAccumulator, path...)
 	i := n.firstChild
 	for {
-		childNode, err := cache.getReadonlyNode(n.children[i])
+		childNode, err := cache.getNodeHeader(n.children[i])
 		if err != nil {
 			return err
 		}

@@ -80,7 +80,7 @@ type merkleTrieCache struct {
 	// The commitStagingPages is a buffer used during the commit when we run out of room in the cached storage.
 	// Pages that are stored in the commitStagingPages would contain only the minimal needed information required
 	// for the calculation of the commiting pages hashes.
-	commitStagingPages           map[uint64]map[storedNodeIdentifier]*node
+	commitStagingPages map[uint64]map[storedNodeIdentifier]*node
 	// commitStagingNodeCountTarget is the number of nodes we are going to have in the commit staging buffer.
 	// when we reload a page the exceed this number, an atbitrary page would get evicted.
 	commitStagingNodeCountTarget int
@@ -157,48 +157,6 @@ func (mtc *merkleTrieCache) getNode(nid storedNodeIdentifier) (pnode *node, err 
 	return
 }
 
-// getReadonlyNode retrieves the given node by its identifier, loading the page if it
-// cannot be found in cache, and returning an error if it's not in cache nor in committer.
-// The node is also being marked as "read-only", so it can be discarded once the hash calculation is done.
-func (mtc *merkleTrieCache) getReadonlyNode(nid storedNodeIdentifier) (pnode *node, err error) {
-	nodePage := uint64(nid) / uint64(mtc.nodesPerPage)
-	pageNodes := mtc.pageToNIDsPtr[nodePage]
-	if pageNodes != nil {
-		return pageNodes[nid], nil
-	}
-
-	if mtc.readOnlyPages[nodePage] == true {
-		return nil, ErrLoadedPageMissingNode
-	}
-
-	cachedNodesBefore := mtc.cachedNodeCount
-	err = mtc.loadPageHeaders(nodePage)
-	if err != nil {
-		return
-	}
-	var have bool
-	pageNodes = mtc.pageToNIDsPtr[nodePage]
-	if pnode, have = pageNodes[nid]; !have {
-		err = ErrLoadedPageMissingNode
-	}
-	mtc.readOnlyPages[nodePage] = true
-	mtc.readOnlyCachedNodeCount += mtc.cachedNodeCount - cachedNodesBefore
-	return
-}
-
-func (mtc *merkleTrieCache) discardReadonlyPages(discardAll bool) {
-	for page := range mtc.readOnlyPages {
-		if !discardAll && mtc.readOnlyCachedNodeCount <= 100000 /*mtc.cachedNodeCountTarget*/ {
-			return
-		}
-		// remove the page "page"
-		mtc.cachedNodeCount -= len(mtc.pageToNIDsPtr[page])
-		mtc.readOnlyCachedNodeCount -= len(mtc.pageToNIDsPtr[page])
-		delete(mtc.pageToNIDsPtr, page)
-		delete(mtc.readOnlyPages, page)
-	}
-}
-
 // prioritizeNode make sure to adjust the priority of the given node id.
 // nodes are prioritized based on the page the belong to.
 // a new page would be placed on front, and an older page would get moved
@@ -226,19 +184,17 @@ func (mtc *merkleTrieCache) loadPage(page uint64) (err error) {
 	if len(pageBytes) == 0 {
 		return fmt.Errorf("page %d is missing", page)
 	}
-	decodedNodes, err := decodePage(pageBytes)
+
+	pageMap := mtc.pageToNIDsPtr[page]
+	pageNodesCount := len(pageMap)
+	if pageMap == nil {
+		pageMap = make(map[storedNodeIdentifier]*node)
+	}
+
+	err = decodePage(pageBytes, pageMap, false)
+	mtc.cachedNodeCount += len(pageMap) - pageNodesCount
 	if err != nil {
 		return
-	}
-	if mtc.pageToNIDsPtr[page] == nil {
-		mtc.pageToNIDsPtr[page] = decodedNodes
-		mtc.cachedNodeCount += len(mtc.pageToNIDsPtr[page])
-	} else {
-		mtc.cachedNodeCount -= len(mtc.pageToNIDsPtr[page])
-		for nodeID, pnode := range decodedNodes {
-			mtc.pageToNIDsPtr[page][nodeID] = pnode
-		}
-		mtc.cachedNodeCount += len(mtc.pageToNIDsPtr[page])
 	}
 
 	// if we've just loaded a deferred page, no need to reload it during the commit.
@@ -367,9 +323,8 @@ func (mtc *merkleTrieCache) commit() error {
 		if err != nil {
 			return err
 		}
-		mtc.discardReadonlyPages(false)
 	}
-	mtc.discardReadonlyPages(true)
+	mtc.discardCommitStagingPages()
 
 	// store the pages.
 	for page, nodeIDs := range createdPages {
@@ -451,35 +406,43 @@ func (mtc *merkleTrieCache) calculatePageHashes(page int64) (err error) {
 }
 
 // decodePage decodes a byte array into a page content
-func decodePage(bytes []byte) (nodesMap map[storedNodeIdentifier]*node, err error) {
+func decodePage(bytes []byte, nodesMap map[storedNodeIdentifier]*node, headersOnly bool) (err error) {
 	version, versionLength := binary.Uvarint(bytes[:])
 	if versionLength <= 0 {
-		return nil, ErrPageDecodingFailuire
+		return ErrPageDecodingFailuire
 	}
 	if version != NodePageVersion {
-		return nil, ErrPageDecodingFailuire
+		return ErrPageDecodingFailuire
 	}
 	nodesCount, nodesCountLength := binary.Varint(bytes[versionLength:])
 	if nodesCountLength <= 0 {
-		return nil, ErrPageDecodingFailuire
+		return ErrPageDecodingFailuire
 	}
-	nodesMap = make(map[storedNodeIdentifier]*node)
+
 	walk := nodesCountLength + versionLength
+	var pnode *node
+	var nodeLength int
 	for i := int64(0); i < nodesCount; i++ {
 		nodeID, nodesIDLength := binary.Uvarint(bytes[walk:])
 		if nodesIDLength <= 0 {
-			return nil, ErrPageDecodingFailuire
+			return ErrPageDecodingFailuire
 		}
 		walk += nodesIDLength
-		pnode, nodeLength := deserializeNode(bytes[walk:])
+		if headersOnly {
+			//pnode, nodeLength = deserializeNodeHeader(bytes[walk:])
+			// temporary -
+			pnode, nodeLength = deserializeNode(bytes[walk:])
+		} else {
+			pnode, nodeLength = deserializeNode(bytes[walk:])
+		}
 		if nodeLength <= 0 {
-			return nil, ErrPageDecodingFailuire
+			return ErrPageDecodingFailuire
 		}
 		walk += nodeLength
 		nodesMap[storedNodeIdentifier(nodeID)] = pnode
 	}
 
-	return nodesMap, nil
+	return nil
 }
 
 // decodePageHeaders decodes a byte array into a page that includes only the headers for each of the nodes.
@@ -555,4 +518,79 @@ func (mtc *merkleTrieCache) evict() (removedNodes int) {
 	}
 	removedNodes = removedNodes - mtc.cachedNodeCount
 	return
+}
+
+// loadCommitStagingPage - todo
+func (mtc *merkleTrieCache) loadCommitStagingPage(page uint64) (err error) {
+	pageBytes, err := mtc.committer.LoadPage(page)
+	if err != nil {
+		return
+	}
+	if len(pageBytes) == 0 {
+		return fmt.Errorf("page %d is missing", page)
+	}
+
+	pageMap := make(map[storedNodeIdentifier]*node)
+	err = decodePage(pageBytes, pageMap, true)
+	if err != nil {
+		return err
+	}
+
+	mtc.commitStagingPages[page] = pageMap
+	mtc.commitStagingNodeCount += len(pageMap)
+	return
+
+}
+func (mtc *merkleTrieCache) evaluateAndEvictCommitStagingCache() {
+	if mtc.commitStagingNodeCount < mtc.commitStagingNodeCountTarget {
+		return
+	}
+	for page, pageMap := range mtc.commitStagingPages {
+		delete(mtc.commitStagingPages, page)
+		mtc.commitStagingNodeCount -= len(pageMap)
+	}
+}
+
+// getReadonlyNode retrieves the given node by its identifier, loading the page if it
+// cannot be found in cache, and returning an error if it's not in cache nor in committer.
+// The node is also being marked as "read-only", so it can be discarded once the hash calculation is done.
+func (mtc *merkleTrieCache) getNodeHeader(nid storedNodeIdentifier) (pnode *node, err error) {
+	return mtc.getNode(nid)
+	nodePage := uint64(nid) / uint64(mtc.nodesPerPage)
+	pageNodes := mtc.pageToNIDsPtr[nodePage]
+	if pageNodes != nil {
+		return pageNodes[nid], nil
+	}
+
+	if pageNodes := mtc.commitStagingPages[nodePage]; pageNodes != nil {
+		if pnode = pageNodes[nid]; pnode == nil {
+			return nil, ErrLoadedPageMissingNode
+		}
+		return pnode, nil
+	}
+
+	// if we have enough room in the regular cache, use that one first -
+	if mtc.cachedNodeCount < mtc.cachedNodeCountTarget {
+		return mtc.getNode(nid)
+	}
+
+	// check if we have enough free room in the commitStagingPages; if not, release some.
+	mtc.evaluateAndEvictCommitStagingCache()
+
+	// otherwise, use the "expansion tank", and load it to the "lean" commitStagingPages
+
+	err = mtc.loadCommitStagingPage(nodePage)
+	if err != nil {
+		return
+	}
+
+	if pnode = mtc.commitStagingPages[nodePage][nid]; pnode != nil {
+		return
+	}
+	return nil, ErrLoadedPageMissingNode
+}
+
+func (mtc *merkleTrieCache) discardCommitStagingPages() {
+	mtc.commitStagingNodeCount = 0
+	mtc.commitStagingPages = make(map[uint64]map[storedNodeIdentifier]*node)
 }

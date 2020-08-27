@@ -250,7 +250,8 @@ func TestCacheMidTransactionPageDeletion(t *testing.T) {
 			continue
 		}
 
-		decodedPage, err := decodePage(pageContent)
+		decodedPage := make(map[storedNodeIdentifier]*node)
+		err := decodePage(pageContent, decodedPage, false)
 		require.NoError(t, err)
 
 		// stored page should have more than a single node.

@@ -118,7 +118,9 @@ func TestNoRedundentPages(t *testing.T) {
 			_, err := mt2.deserialize(bytes)
 			require.NoError(t, err)
 		} else {
-			nodes, _ := decodePage(bytes)
+			nodes := make(map[storedNodeIdentifier]*node)
+			err := decodePage(bytes, nodes, false)
+			require.NoError(t, err)
 			for nodeID := range nodes {
 				trieNodes[nodeID] = true
 			}
