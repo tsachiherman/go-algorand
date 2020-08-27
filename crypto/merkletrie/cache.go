@@ -433,9 +433,7 @@ func decodePage(bytes []byte, nodesMap map[storedNodeIdentifier]*node, headersOn
 		}
 		walk += nodesIDLength
 		if headersOnly {
-			//pnode, nodeLength = deserializeNodeHeader(bytes[walk:])
-			// temporary -
-			pnode, nodeLength = deserializeNode(bytes[walk:])
+			pnode, nodeLength = deserializeNodeHeader(bytes[walk:])
 		} else {
 			pnode, nodeLength = deserializeNode(bytes[walk:])
 		}
