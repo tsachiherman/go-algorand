@@ -177,7 +177,8 @@ func (mtc *merkleTrieCache) prioritizeNode(nid storedNodeIdentifier) {
 
 // loadPage loads a give page id into memory.
 func (mtc *merkleTrieCache) loadPage(page uint64) (err error) {
-	pageBytes, err := mtc.committer.LoadPage(page)
+	var pageBytes []byte
+	pageBytes, err = mtc.committer.LoadPage(page)
 	if err != nil {
 		return
 	}
@@ -196,6 +197,7 @@ func (mtc *merkleTrieCache) loadPage(page uint64) (err error) {
 	if err != nil {
 		return
 	}
+	mtc.pageToNIDsPtr[page] = pageMap
 
 	// if we've just loaded a deferred page, no need to reload it during the commit.
 	if mtc.deferedPageLoad != page {
@@ -555,7 +557,6 @@ func (mtc *merkleTrieCache) evaluateAndEvictCommitStagingCache() {
 // cannot be found in cache, and returning an error if it's not in cache nor in committer.
 // The node is also being marked as "read-only", so it can be discarded once the hash calculation is done.
 func (mtc *merkleTrieCache) getNodeHeader(nid storedNodeIdentifier) (pnode *node, err error) {
-	return mtc.getNode(nid)
 	nodePage := uint64(nid) / uint64(mtc.nodesPerPage)
 	pageNodes := mtc.pageToNIDsPtr[nodePage]
 	if pageNodes != nil {

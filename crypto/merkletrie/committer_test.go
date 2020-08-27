@@ -53,7 +53,7 @@ func TestInMemoryCommitter(t *testing.T) {
 	releasedNodes, err := mt1.Evict(true)
 	require.NoError(t, err)
 	savedMemoryCommitter := memoryCommitter.Duplicate()
-	require.Equal(t, 18957, releasedNodes)
+	require.Equal(t, 19085, releasedNodes)
 	for i := len(hashes) / 2; i < len(hashes); i++ {
 		mt1.Add(hashes[i][:])
 	}

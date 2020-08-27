@@ -58,9 +58,11 @@ func TestCacheEviction1(t *testing.T) {
 
 	for i := defaultTestEvictSize; i < len(hashes); i++ {
 		mt1.Add(hashes[i][:])
-		mt1.Evict(true)
+		_, err := mt1.Evict(true)
+		require.NoError(t, err)
 		require.GreaterOrEqual(t, defaultTestEvictSize, mt1.cache.cachedNodeCount)
 		verifyCacheNodeCount(t, mt1)
+
 	}
 }
 
