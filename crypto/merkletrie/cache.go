@@ -493,7 +493,8 @@ func (mtc *merkleTrieCache) evict() (removedNodes int) {
 // loadCommitStagingPage - load the given page into the commit staging pages area.
 // pages in that area are always full pages. no partial pages are possible.
 func (mtc *merkleTrieCache) loadCommitStagingPage(page uint64) (err error) {
-	pageBytes, err := mtc.committer.LoadPage(page)
+	var pageBytes []byte
+	pageBytes, err = mtc.committer.LoadPage(page)
 	if err != nil {
 		return
 	}
