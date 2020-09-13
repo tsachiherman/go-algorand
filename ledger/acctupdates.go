@@ -63,7 +63,7 @@ const (
 // value was calibrated using BenchmarkCalibrateCacheNodeSize
 var trieCachedNodesCount = 9000
 
-var accountCacheSize = 1000
+var accountCacheSize = 5000
 
 // A modifiedAccount represents an account that has been modified since
 // the persistent state stored in the account DB (i.e., in the range of
@@ -318,15 +318,22 @@ func (au *accountUpdates) IsWritingCatchpointFile() bool {
 // even while it could return the AccoutData which represent the "rewarded" account data.
 func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewards bool) (data basics.AccountData, err error) {
 	au.accountsMu.RLock()
-	data, err = au.lookupImpl(rnd, addr, withRewards)
+	var lookedup bool
+	data, lookedup, err = au.lookupImpl(rnd, addr, withRewards)
 	au.accountsMu.RUnlock()
 
-	if err != nil || data.Status != basics.Online {
+	if err != nil /*|| data.Status != basics.Online*/ {
 		return
 	}
-
+	if !lookedup {
+		return
+	}
 	au.accountsMu.Lock()
 	defer au.accountsMu.Unlock()
+	// since we release and reaquired the lock, we need to revalidate that the round still valid.
+	if rnd < au.dbRound {
+		return
+	}
 
 	// if we have no accounts updates between dbRound and round rnd, than we can safly update
 	// the baseAccounts with the given data.
@@ -761,8 +768,9 @@ func (aul *accountUpdatesLedgerEvaluator) BlockHdr(r basics.Round) (bookkeeping.
 }
 
 // Lookup returns the account balance for a given address at a given round
-func (aul *accountUpdatesLedgerEvaluator) Lookup(rnd basics.Round, addr basics.Address) (basics.AccountData, error) {
-	return aul.au.lookupImpl(rnd, addr, true)
+func (aul *accountUpdatesLedgerEvaluator) Lookup(rnd basics.Round, addr basics.Address) (data basics.AccountData, err error) {
+	data, _, err = aul.au.lookupImpl(rnd, addr, true)
+	return
 }
 
 // Totals returns the totals for a given round
@@ -777,8 +785,9 @@ func (aul *accountUpdatesLedgerEvaluator) isDup(config.ConsensusParams, basics.R
 }
 
 // LookupWithoutRewards returns the account balance for a given address at a given round, without the reward
-func (aul *accountUpdatesLedgerEvaluator) LookupWithoutRewards(rnd basics.Round, addr basics.Address) (basics.AccountData, error) {
-	return aul.au.lookupImpl(rnd, addr, false)
+func (aul *accountUpdatesLedgerEvaluator) LookupWithoutRewards(rnd basics.Round, addr basics.Address) (data basics.AccountData, err error) {
+	data, _, err = aul.au.lookupImpl(rnd, addr, false)
+	return
 }
 
 // GetCreatorForRound returns the asset/app creator for a given asset/app index at a given round
@@ -1375,7 +1384,7 @@ func (au *accountUpdates) newBlockImpl(blk bookkeeping.Block, delta StateDelta) 
 // lookupImpl returns the accound data for a given address at a given round. The withRewards indicates whether the
 // rewards should be added to the AccountData before returning. Note that the function doesn't update the account with the rewards,
 // even while it could return the AccoutData which represent the "rewarded" account data.
-func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, withRewards bool) (data basics.AccountData, err error) {
+func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, withRewards bool) (data basics.AccountData, lookedup bool, err error) {
 	offset, err := au.roundOffset(rnd)
 	if err != nil {
 		return
@@ -1396,7 +1405,7 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 	if offset == uint64(len(au.deltas)) {
 		macct, ok := au.accounts[addr]
 		if ok {
-			return macct.data, nil
+			return macct.data, false, nil
 		}
 	} else {
 		// Check if the account has been updated recently.  Traverse the deltas
@@ -1405,14 +1414,13 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 			offset--
 			d, ok := au.deltas[offset][addr]
 			if ok {
-				return d.new, nil
+				return d.new, false, nil
 			}
 		}
 	}
 
 	if data, has := au.baseAccounts[addr]; has {
-		au.log.Infof("tsachi : got account data from read cache")
-		return data, nil
+		return data, false, nil
 	}
 
 	// No updates of this account in the in-memory deltas; use on-disk DB.
@@ -1421,7 +1429,7 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 	// a separate transaction here, and directly use a prepared SQL query
 	// against the database.
 	data, err = au.accountsq.lookup(addr)
-	return
+	return data, true, err
 }
 
 // getCreatorForRoundImpl returns the asset/app creator for a given asset/app index at a given round
