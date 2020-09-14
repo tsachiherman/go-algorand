@@ -322,7 +322,7 @@ func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewa
 	data, lookedup, err = au.lookupImpl(rnd, addr, withRewards)
 	au.accountsMu.RUnlock()
 
-	if err != nil /*|| data.Status != basics.Online*/ {
+	if err != nil || data.Status != basics.Online {
 		return
 	}
 	if !lookedup {
