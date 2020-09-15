@@ -63,7 +63,7 @@ const (
 // value was calibrated using BenchmarkCalibrateCacheNodeSize
 var trieCachedNodesCount = 9000
 
-var accountCacheSize = 5000
+var accountCacheSize = 100
 
 // A modifiedAccount represents an account that has been modified since
 // the persistent state stored in the account DB (i.e., in the range of
@@ -317,6 +317,7 @@ func (au *accountUpdates) IsWritingCatchpointFile() bool {
 // rewards should be added to the AccountData before returning. Note that the function doesn't update the account with the rewards,
 // even while it could return the AccoutData which represent the "rewarded" account data.
 func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewards bool) (data basics.AccountData, err error) {
+	start := time.Now()
 	au.accountsMu.RLock()
 	var lookedup bool
 	data, lookedup, err = au.lookupImpl(rnd, addr, withRewards)
@@ -326,8 +327,12 @@ func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewa
 		return
 	}
 	if !lookedup {
+		au.log.Infof("online account lookup took %d ns", time.Now().Sub(start).Nanoseconds())
 		return
 	}
+	au.log.Infof("online account lookup took %d ns (db lookup)", time.Now().Sub(start).Nanoseconds())
+
+	start = time.Now()
 	au.accountsMu.Lock()
 	defer au.accountsMu.Unlock()
 	// since we release and reaquired the lock, we need to revalidate that the round still valid.
@@ -354,6 +359,7 @@ func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewa
 		}
 	}
 	au.baseAccounts[addr] = data
+	au.log.Infof("online account lookup took %d ns (update time)", time.Now().Sub(start).Nanoseconds())
 	return
 }
 
