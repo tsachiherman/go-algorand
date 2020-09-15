@@ -140,7 +140,10 @@ type accountUpdates struct {
 	accounts map[basics.Address]modifiedAccount
 
 	// baseAccounts the recently queries accounts at round dbRound.
-	baseAccounts map[basics.Address]basics.AccountData
+	baseAccountsCache *accountsCache
+
+	pendingBaseAccountsCache   map[basics.Address]basics.AccountData
+	pendingBaseAccountsCacheMu deadlock.Mutex
 
 	// creatableDeltas stores creatable updates for every round after dbRound.
 	creatableDeltas []map[basics.CreatableIndex]modifiedCreatable
@@ -327,48 +330,26 @@ func (au *accountUpdates) IsWritingCatchpointFile() bool {
 // even while it could return the AccoutData which represent the "rewarded" account data.
 func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewards bool) (data basics.AccountData, err error) {
 	start := time.Now()
-	au.accountsMu.RLock()
 	var lookedup bool
-	data, lookedup, err = au.lookupImpl(rnd, addr, withRewards)
-	au.accountsMu.RUnlock()
-
-	if err != nil || data.Status != basics.Online {
-		return
-	}
-	if !lookedup {
-		au.log.Infof("online account lookup took %d ns", time.Now().Sub(start).Nanoseconds())
-		return
-	}
-	au.log.Infof("online account lookup took %d ns (db lookup)", time.Now().Sub(start).Nanoseconds())
-
-	start = time.Now()
-	au.accountsMu.Lock()
-	defer au.accountsMu.Unlock()
-	// since we release and reaquired the lock, we need to revalidate that the round still valid.
-	if rnd < au.dbRound {
-		return
-	}
-
-	// if we have no accounts updates between dbRound and round rnd, than we can safly update
-	// the baseAccounts with the given data.
-	offset := rnd - au.dbRound
-	for i := basics.Round(0); i < offset; i++ {
-		if _, has := au.deltas[i][addr]; has {
+	defer func() {
+		if data.Status != basics.Online {
 			return
 		}
+		au.log.Infof("accountUpdates.Lookup took %d ns (%v)", time.Now().Sub(start).Nanoseconds(), lookedup)
+	}()
+
+	au.accountsMu.RLock()
+	defer au.accountsMu.RUnlock()
+
+	data, lookedup, err = au.lookupImpl(rnd, addr, withRewards)
+
+	if err != nil || data.Status != basics.Online || !lookedup {
+		return
 	}
 
-	if len(au.baseAccounts) > accountCacheSize {
-		// delete the first item before inserting a new one.
-		for k := range au.baseAccounts {
-			delete(au.baseAccounts, k)
-			if len(au.baseAccounts) < accountCacheSize {
-				break
-			}
-		}
-	}
-	au.baseAccounts[addr] = data
-	au.log.Infof("online account lookup took %d ns (update time)", time.Now().Sub(start).Nanoseconds())
+	au.pendingBaseAccountsCacheMu.Lock()
+	defer au.pendingBaseAccountsCacheMu.Unlock()
+	au.pendingBaseAccountsCache[addr] = data
 	return
 }
 
@@ -933,7 +914,8 @@ func (au *accountUpdates) initializeFromDisk(l ledgerForTracker) (lastBalancesRo
 	au.deltas = nil
 	au.creatableDeltas = nil
 	au.accounts = make(map[basics.Address]modifiedAccount)
-	au.baseAccounts = make(map[basics.Address]basics.AccountData)
+	au.baseAccountsCache = makeAccountsCache(accountCacheSize)
+	au.pendingBaseAccountsCache = make(map[basics.Address]basics.AccountData)
 	au.creatables = make(map[basics.CreatableIndex]modifiedCreatable)
 	au.deltasAccum = []int{0}
 
@@ -1443,7 +1425,7 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 		}
 	}
 
-	if data, has := au.baseAccounts[addr]; has {
+	if data, has := au.baseAccountsCache.get(addr); has {
 		return data, false, nil
 	}
 
@@ -1728,12 +1710,19 @@ func (au *accountUpdates) commitRound(offset uint64, dbRound basics.Round, lookb
 			au.creatables[cidx] = mcreat
 		}
 	}
-	// update the base account read cache
+
+	// update the base online account read cache
+	au.pendingBaseAccountsCacheMu.Lock()
+	// dump the content of the pendingBaseAccountsCache into baseAccountsCache
+	for acct, data := range au.pendingBaseAccountsCache {
+		au.baseAccountsCache.add(acct, data)
+	}
+	au.pendingBaseAccountsCache = make(map[basics.Address]basics.AccountData)
+	au.pendingBaseAccountsCacheMu.Unlock()
+	// update the entries in the cache, as needed. given that the offset here is typically only few rounds, the number of iteration here isn't that bad.
 	for i := uint64(0); i < offset; i++ {
 		for addr, acctDelta := range deltas[i] {
-			if _, has := au.baseAccounts[addr]; has {
-				au.baseAccounts[addr] = acctDelta.new
-			}
+			au.baseAccountsCache.update(addr, acctDelta.new)
 		}
 	}
 
