@@ -23,6 +23,7 @@ import (
 type accountsCacheEntry struct {
 	prev, next *accountsCacheEntry
 	data       basics.AccountData
+	addr       basics.Address
 }
 
 // accountsCache is a caching structure used to maintain a cache of the most recently used cached accounts.
@@ -76,6 +77,7 @@ func (ac *accountsCache) add(addr basics.Address, data basics.AccountData) {
 			ac.first = entry.next
 			entry.next = nil
 			entry.prev = nil
+			delete(ac.accountsLookup, entry.addr)
 		} else {
 			entry = &ac.entries[ac.nextEntry]
 			ac.nextEntry++
@@ -85,6 +87,7 @@ func (ac *accountsCache) add(addr basics.Address, data basics.AccountData) {
 
 	// add as the last entry on the linked list.
 	entry.data = data
+	entry.addr = addr
 	if ac.last == nil {
 		ac.last = entry
 		ac.first = entry

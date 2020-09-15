@@ -63,7 +63,7 @@ const (
 // value was calibrated using BenchmarkCalibrateCacheNodeSize
 var trieCachedNodesCount = 9000
 
-var accountCacheSize = 100
+var accountCacheSize = 300
 
 // A modifiedAccount represents an account that has been modified since
 // the persistent state stored in the account DB (i.e., in the range of
