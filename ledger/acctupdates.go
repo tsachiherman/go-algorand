@@ -329,14 +329,14 @@ func (au *accountUpdates) IsWritingCatchpointFile() bool {
 // rewards should be added to the AccountData before returning. Note that the function doesn't update the account with the rewards,
 // even while it could return the AccoutData which represent the "rewarded" account data.
 func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewards bool) (data basics.AccountData, err error) {
-	start := time.Now()
+	//start := time.Now()
 	var lookedup bool
-	defer func() {
+	/*defer func() {
 		if data.Status != basics.Online {
 			return
 		}
 		au.log.Infof("accountUpdates.Lookup took %d ns (%v)", time.Now().Sub(start).Nanoseconds(), lookedup)
-	}()
+	}()*/
 
 	au.accountsMu.RLock()
 	defer au.accountsMu.RUnlock()
