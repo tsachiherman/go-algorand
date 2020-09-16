@@ -1431,8 +1431,7 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 				return d.new, false, nil
 			}
 		}
-
-		au.log.Panicf("lookupImpl could not find account delta")
+		// if we failed to find the delta, it must be in the range of [offset+1 .. len(au.deltas)]
 	}
 
 	if data, has := au.baseAccountsCache.get(addr); has {

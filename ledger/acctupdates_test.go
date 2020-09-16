@@ -229,10 +229,11 @@ func checkAcctUpdates(t *testing.T, au *accountUpdates, base basics.Round, lates
 func checkAcctUpdatesConsistency(t *testing.T, au *accountUpdates) {
 	accounts := make(map[basics.Address]modifiedAccount)
 
-	for _, rdelta := range au.deltas {
+	for offset, rdelta := range au.deltas {
 		for addr, adelta := range rdelta {
 			macct := accounts[addr]
 			macct.data = adelta.new
+			macct.latestRound = basics.Round(offset) + au.dbRound + 1
 			macct.ndeltas++
 			accounts[addr] = macct
 		}
