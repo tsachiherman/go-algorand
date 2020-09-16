@@ -1418,10 +1418,10 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 			return macct.data, false, nil
 		}
 
-		latestRoundOffset := uint64(macct.latestRound - au.dbRound)
-		if latestRoundOffset < offset {
-			offset = latestRoundOffset
+		if macct.latestRound > au.dbRound && macct.latestRound < rnd {
+			offset = uint64(macct.latestRound - au.dbRound)
 		}
+
 		// Check if the account has been updated recently.  Traverse the deltas
 		// backwards to ensure that later updates take priority if present.
 		for offset > 0 {
