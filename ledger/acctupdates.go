@@ -78,6 +78,9 @@ type modifiedAccount struct {
 	// entries when all changes to an account have been reflected in
 	// the account DB, and no outstanding modifications remain.
 	ndeltas int
+
+	// latestRound is the latest round at which the account was modified
+	latestRound basics.Round
 }
 
 type modifiedCreatable struct {
@@ -1362,6 +1365,7 @@ func (au *accountUpdates) newBlockImpl(blk bookkeeping.Block, delta StateDelta) 
 		macct := au.accounts[addr]
 		macct.ndeltas++
 		macct.data = data.new
+		macct.latestRound = rnd
 		au.accounts[addr] = macct
 	}
 
@@ -1413,34 +1417,22 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 		if offset == uint64(len(au.deltas)) {
 			return macct.data, false, nil
 		}
-		// determine search direction by distance from either end.
-		if 2*rnd-2*au.dbRound > basics.Round(len(au.deltas)) {
-			// we're closer to the end, so we'll go backward
 
-			// Check if the account has been updated recently.  Traverse the deltas
-			// backwards to ensure that later updates take priority if present.
-			for offset > 0 {
-				offset--
-				d, ok := au.deltas[offset][addr]
-				if ok {
-					return d.new, false, nil
-				}
-			}
-		} else {
-			// else, go upward.
-			foundRound := int64(-1)
-			for i := uint64(0); i < offset && macct.ndeltas > 0; i++ {
-				_, ok := au.deltas[i][addr]
-				if ok {
-					foundRound = int64(i)
-					macct.ndeltas--
-				}
-			}
-			if foundRound != int64(-1) {
-				return au.deltas[foundRound][addr].new, false, nil
+		latestRoundOffset := uint64(macct.latestRound - au.dbRound)
+		if latestRoundOffset < offset {
+			offset = latestRoundOffset
+		}
+		// Check if the account has been updated recently.  Traverse the deltas
+		// backwards to ensure that later updates take priority if present.
+		for offset > 0 {
+			offset--
+			d, ok := au.deltas[offset][addr]
+			if ok {
+				return d.new, false, nil
 			}
 		}
-		return basics.AccountData{}, false, fmt.Errorf("lookupImpl could not find account delta")
+
+		au.log.Panicf("lookupImpl could not find account delta")
 	}
 
 	if data, has := au.baseAccountsCache.get(addr); has {
