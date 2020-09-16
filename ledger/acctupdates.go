@@ -1409,41 +1409,38 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 	// Check if this is the most recent round, in which case, we can
 	// use a cache of the most recent account state.
 	macct, hasDelta := au.accounts[addr]
-	if offset == uint64(len(au.deltas)) {
-		if hasDelta {
+	if hasDelta {
+		if offset == uint64(len(au.deltas)) {
 			return macct.data, false, nil
 		}
-	} else {
-		if hasDelta {
-			// determine search direction by distance from either end.
-			if 2*rnd-2*au.dbRound > basics.Round(len(au.deltas)) {
-				// we're closer to the end, so we'll go backward
+		// determine search direction by distance from either end.
+		if 2*rnd-2*au.dbRound > basics.Round(len(au.deltas)) {
+			// we're closer to the end, so we'll go backward
 
-				// Check if the account has been updated recently.  Traverse the deltas
-				// backwards to ensure that later updates take priority if present.
-				for offset > 0 {
-					offset--
-					d, ok := au.deltas[offset][addr]
-					if ok {
-						return d.new, false, nil
-					}
-				}
-			} else {
-				// else, go upward.
-				foundRound := int64(-1)
-				for i := uint64(0); i < offset && macct.ndeltas > 0; i++ {
-					_, ok := au.deltas[i][addr]
-					if ok {
-						foundRound = int64(i)
-						macct.ndeltas--
-					}
-				}
-				if foundRound != int64(-1) {
-					return au.deltas[foundRound][addr].new, false, nil
+			// Check if the account has been updated recently.  Traverse the deltas
+			// backwards to ensure that later updates take priority if present.
+			for offset > 0 {
+				offset--
+				d, ok := au.deltas[offset][addr]
+				if ok {
+					return d.new, false, nil
 				}
 			}
-			return basics.AccountData{}, false, fmt.Errorf("lookupImpl could not find account delta")
+		} else {
+			// else, go upward.
+			foundRound := int64(-1)
+			for i := uint64(0); i < offset && macct.ndeltas > 0; i++ {
+				_, ok := au.deltas[i][addr]
+				if ok {
+					foundRound = int64(i)
+					macct.ndeltas--
+				}
+			}
+			if foundRound != int64(-1) {
+				return au.deltas[foundRound][addr].new, false, nil
+			}
 		}
+		return basics.AccountData{}, false, fmt.Errorf("lookupImpl could not find account delta")
 	}
 
 	if data, has := au.baseAccountsCache.get(addr); has {
