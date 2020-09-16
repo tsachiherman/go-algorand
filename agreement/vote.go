@@ -18,6 +18,7 @@ package agreement
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/algorand/go-algorand/crypto"
 	"github.com/algorand/go-algorand/data/basics"
@@ -88,7 +89,10 @@ type (
 // verify verifies that a vote that was received from the network is valid.
 func (uv unauthenticatedVote) verify(l LedgerReader) (vote, error) {
 	rv := uv.R
+	t1 := time.Now()
+
 	m, err := membership(l, rv.Sender, rv.Round, rv.Period, rv.Step)
+	logging.Base().Infof("tsachi : unauthenticatedVote.membership  took %v", time.Now().Sub(t1))
 	if err != nil {
 		return vote{}, fmt.Errorf("unauthenticatedVote.verify: could not get membership parameters: %v", err)
 	}
@@ -130,10 +134,14 @@ func (uv unauthenticatedVote) verify(l LedgerReader) (vote, error) {
 		return vote{}, fmt.Errorf("unauthenticatedVote.verify: could not verify FS signature on vote by %v given %v: %+v", rv.Sender, voteID, uv)
 	}
 
+	//t1 = time.Now()
+
 	cred, err := uv.Cred.Verify(proto, m)
 	if err != nil {
 		return vote{}, fmt.Errorf("unauthenticatedVote.verify: got a vote, but sender was not selected: %v", err)
 	}
+
+	//logging.Base().Infof("tsachi : unauthenticatedVote.verify Verify took %v", time.Now().Sub(t1))
 
 	return vote{R: rv, Cred: cred, Sig: uv.Sig}, nil
 }

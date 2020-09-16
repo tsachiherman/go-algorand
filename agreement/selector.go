@@ -18,10 +18,13 @@ package agreement
 
 import (
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	"github.com/algorand/go-algorand/config"
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/committee"
+	"github.com/algorand/go-algorand/logging"
 	"github.com/algorand/go-algorand/protocol"
 )
 
@@ -55,6 +58,11 @@ func seedRound(r basics.Round, cparams config.ConsensusParams) basics.Round {
 	return r.SubSaturate(basics.Round(cparams.SeedLookback))
 }
 
+var circCalls = int64(0)
+var circTime = int64(0)
+var seedCalls = int64(0)
+var seedTime = int64(0)
+
 // a helper function for obtaining memberhship verification parameters.
 func membership(l LedgerReader, addr basics.Address, r basics.Round, p period, s step) (m committee.Membership, err error) {
 	cparams, err := l.ConsensusParams(ParamsRound(r))
@@ -70,13 +78,32 @@ func membership(l LedgerReader, addr basics.Address, r basics.Round, p period, s
 		return
 	}
 
+	t := time.Now()
 	total, err := l.Circulation(balanceRound)
+	t2 := time.Now().Sub(t)
+	atomic.AddInt64(&circTime, t2.Nanoseconds())
+	if atomic.AddInt64(&circCalls, 1) == 300 {
+		accumulated := atomic.LoadInt64(&circTime) / 300
+		atomic.StoreInt64(&circTime, 0)
+		atomic.StoreInt64(&circCalls, 0)
+		logging.Base().Infof("tsachi: Circulation call took %d ns", accumulated)
+	}
+
 	if err != nil {
 		err = fmt.Errorf("Service.initializeVote (r=%d): Failed to obtain total circulation in round %d: %v", r, balanceRound, err)
 		return
 	}
 
+	t = time.Now()
 	seed, err := l.Seed(seedRound)
+	t2 = time.Now().Sub(t)
+	atomic.AddInt64(&seedTime, t2.Nanoseconds())
+	if atomic.AddInt64(&seedCalls, 1) == 300 {
+		accumulated := atomic.LoadInt64(&seedTime) / 300
+		atomic.StoreInt64(&seedTime, 0)
+		atomic.StoreInt64(&seedCalls, 0)
+		logging.Base().Infof("tsachi: Seed call took %d ns", accumulated)
+	}
 	if err != nil {
 		err = fmt.Errorf("Service.initializeVote (r=%d): Failed to obtain seed in round %d: %v", r, seedRound, err)
 		return

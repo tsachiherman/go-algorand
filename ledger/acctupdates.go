@@ -332,6 +332,24 @@ func (au *accountUpdates) IsWritingCatchpointFile() bool {
 // rewards should be added to the AccountData before returning. Note that the function doesn't update the account with the rewards,
 // even while it could return the AccoutData which represent the "rewarded" account data.
 func (au *accountUpdates) Lookup(rnd basics.Round, addr basics.Address, withRewards bool) (data basics.AccountData, err error) {
+
+	au.pendingBaseAccountsCacheMu.Lock()
+	if d, has := au.baseAccountsCache.get(rnd, addr); has {
+		au.pendingBaseAccountsCacheMu.Unlock()
+		if !withRewards {
+			return d, nil
+		}
+		// todo - add support for rewards calculation here.
+		/*
+					totals := au.roundTotals[offsetForRewards]
+			            proto := au.protos[offsetForRewards]
+			            data = data.WithUpdatedRewards(proto, totals.RewardsLevel)
+
+		*/
+	} else {
+		au.pendingBaseAccountsCacheMu.Unlock()
+	}
+
 	//start := time.Now()
 	var lookedup bool
 	/*defer func() {
@@ -671,6 +689,8 @@ func (au *accountUpdates) committedUpTo(committedRound basics.Round) (retRound b
 // newBlock is the accountUpdates implementation of the ledgerTracker interface. This is the "external" facing function
 // which invokes the internal implementation after taking the lock.
 func (au *accountUpdates) newBlock(blk bookkeeping.Block, delta StateDelta) {
+	au.log.Infof("tsachi : accountUpdates.newBlock Lock")
+	defer au.log.Infof("tsachi : accountUpdates.newBlock Unlock")
 	au.accountsMu.Lock()
 	defer au.accountsMu.Unlock()
 	au.newBlockImpl(blk, delta)
@@ -1434,10 +1454,6 @@ func (au *accountUpdates) lookupImpl(rnd basics.Round, addr basics.Address, with
 		// if we failed to find the delta, it must be in the range of [offset+1 .. len(au.deltas)]
 	}
 
-	if data, has := au.baseAccountsCache.get(addr); has {
-		return data, false, nil
-	}
-
 	// No updates of this account in the in-memory deltas; use on-disk DB.
 	// The check in roundOffset() made sure the round is exactly the one
 	// present in the on-disk DB.  As an optimization, we avoid creating
@@ -1655,6 +1671,7 @@ func (au *accountUpdates) commitRound(offset uint64, dbRound basics.Round, lookb
 				return
 			}
 		}
+		au.log.Infof("tsachi : accountUpdates.commitRound Lock")
 		return nil
 	}, &au.accountsMu)
 
@@ -1723,17 +1740,32 @@ func (au *accountUpdates) commitRound(offset uint64, dbRound basics.Round, lookb
 	// update the base online account read cache
 	au.pendingBaseAccountsCacheMu.Lock()
 	// dump the content of the pendingBaseAccountsCache into baseAccountsCache
-	for acct, data := range au.pendingBaseAccountsCache {
-		au.baseAccountsCache.add(acct, data)
+	for addr, data := range au.pendingBaseAccountsCache {
+		_, hasAdditionalDeltas := au.accounts[addr]
+		var validThroughRound basics.Round
+		if hasAdditionalDeltas {
+			validThroughRound = newBase - 1
+		} else {
+			validThroughRound = au.dbRound + basics.Round(len(au.deltas)-1)
+		}
+		au.baseAccountsCache.add(addr, data, validThroughRound)
 	}
 	au.pendingBaseAccountsCache = make(map[basics.Address]basics.AccountData)
-	au.pendingBaseAccountsCacheMu.Unlock()
+
 	// update the entries in the cache, as needed. given that the offset here is typically only few rounds, the number of iteration here isn't that bad.
 	for i := uint64(0); i < offset; i++ {
 		for addr, acctDelta := range deltas[i] {
-			au.baseAccountsCache.update(addr, acctDelta.new)
+			_, hasAdditionalDeltas := au.accounts[addr]
+			var validThroughRound basics.Round
+			if hasAdditionalDeltas {
+				validThroughRound = newBase - 1
+			} else {
+				validThroughRound = au.dbRound + basics.Round(len(au.deltas)-1)
+			}
+			au.baseAccountsCache.update(addr, acctDelta.new, validThroughRound)
 		}
 	}
+	au.pendingBaseAccountsCacheMu.Unlock()
 
 	au.deltas = au.deltas[offset:]
 	au.deltasAccum = au.deltasAccum[offset:]
@@ -1745,6 +1777,7 @@ func (au *accountUpdates) commitRound(offset uint64, dbRound basics.Round, lookb
 	au.lastFlushTime = flushTime
 
 	au.accountsMu.Unlock()
+	au.log.Infof("tsachi : accountUpdates.commitRound Unlock")
 
 	if isCatchpointRound && au.archivalLedger && catchpointLabel != "" {
 		// generate the catchpoint file. This need to be done inline so that it will block any new accounts that from being written.

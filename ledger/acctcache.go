@@ -21,9 +21,10 @@ import (
 )
 
 type accountsCacheEntry struct {
-	prev, next *accountsCacheEntry
-	data       basics.AccountData
-	addr       basics.Address
+	prev, next   *accountsCacheEntry
+	data         basics.AccountData
+	addr         basics.Address
+	validThrough basics.Round
 }
 
 // accountsCache is a caching structure used to maintain a cache of the most recently used cached accounts.
@@ -43,14 +44,16 @@ func makeAccountsCache(size int) *accountsCache {
 	}
 }
 
-func (ac *accountsCache) get(addr basics.Address) (data basics.AccountData, have bool) {
+func (ac *accountsCache) get(rnd basics.Round, addr basics.Address) (data basics.AccountData, have bool) {
 	if entry, has := ac.accountsLookup[addr]; has {
-		return entry.data, true
+		if entry.validThrough >= rnd {
+			return entry.data, true
+		}
 	}
 	return basics.AccountData{}, false
 }
 
-func (ac *accountsCache) add(addr basics.Address, data basics.AccountData) {
+func (ac *accountsCache) add(addr basics.Address, data basics.AccountData, validThrough basics.Round) {
 	var entry *accountsCacheEntry
 	var has bool
 	if entry, has = ac.accountsLookup[addr]; has {
@@ -88,6 +91,7 @@ func (ac *accountsCache) add(addr basics.Address, data basics.AccountData) {
 	// add as the last entry on the linked list.
 	entry.data = data
 	entry.addr = addr
+	entry.validThrough = validThrough
 	if ac.last == nil {
 		ac.last = entry
 		ac.first = entry
@@ -99,14 +103,12 @@ func (ac *accountsCache) add(addr basics.Address, data basics.AccountData) {
 	return
 }
 
-func (ac *accountsCache) update(addr basics.Address, data basics.AccountData) {
+func (ac *accountsCache) update(addr basics.Address, data basics.AccountData, validThrough basics.Round) {
 	var entry *accountsCacheEntry
 	var has bool
 	if entry, has = ac.accountsLookup[addr]; !has {
 		return
 	}
-	entry.data = data
-
 	// promote the entry to the top of the list:
 
 	// extract the entry out of the linked list
@@ -125,6 +127,7 @@ func (ac *accountsCache) update(addr basics.Address, data basics.AccountData) {
 
 	// add as the last entry on the linked list.
 	entry.data = data
+	entry.validThrough = validThrough
 	if ac.last == nil {
 		ac.last = entry
 		ac.first = entry

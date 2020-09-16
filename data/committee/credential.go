@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	//"time"
 
 	"github.com/algorand/go-algorand/config"
 	"github.com/algorand/go-algorand/crypto"
@@ -73,8 +74,12 @@ type (
 // If it is, the returned Credential constitutes a proof of this fact.
 // Otherwise, an error is returned.
 func (cred UnauthenticatedCredential) Verify(proto config.ConsensusParams, m Membership) (res Credential, err error) {
+	//venter := time.Now()
 	selectionKey := m.Record.SelectionID
+
 	ok, vrfOut := selectionKey.Verify(cred.Proof, m.Selector)
+	//t1 := time.Now()
+	//logging.Base().Infof("tsachi : Verify . Verify took %v", t1.Sub(venter))
 
 	hashable := hashableCredential{
 		RawOut: vrfOut,
@@ -88,6 +93,9 @@ func (cred UnauthenticatedCredential) Verify(proto config.ConsensusParams, m Mem
 	} else {
 		h = crypto.Hash(append(vrfOut[:], m.Record.Addr[:]...))
 	}
+
+	//t2 := time.Now()
+	//logging.Base().Infof("tsachi : Verify . hashing took %v", t2.Sub(t1))
 
 	if !ok {
 		err = fmt.Errorf("UnauthenticatedCredential.Verify: could not verify VRF Proof with %v (parameters = %+v, proof = %#v)", selectionKey, m, cred.Proof)
@@ -119,6 +127,9 @@ func (cred UnauthenticatedCredential) Verify(proto config.ConsensusParams, m Mem
 			res.Hashable = hashable
 		}
 	}
+	//t1 = time.Now()
+	//logging.Base().Infof("tsachi : Verify . post hash took %v", t1.Sub(t2))
+	//logging.Base().Infof("tsachi : UnauthenticatedCredential.Verify took %v", t1.Sub(venter))
 	return
 }
 
