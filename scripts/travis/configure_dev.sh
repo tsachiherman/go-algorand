@@ -6,10 +6,10 @@ set +e
 echo "/scripts/travis/configure_dev.sh called"
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
-OS=$("${SCRIPTPATH}/../ostype.sh")
+OPERATINGSYSTEM=$("${SCRIPTPATH}/../ostype.sh")
 ARCH=$("${SCRIPTPATH}/../archtype.sh")
 
-if [[ "${OS}" == "linux" ]]; then
+if [[ "${OPERATINGSYSTEM}" == "linux" ]]; then
     if [[ "${ARCH}" == "arm64" ]]; then
         set -e
         sudo apt-get update -y
@@ -20,7 +20,7 @@ if [[ "${OS}" == "linux" ]]; then
         sudo apt-get update -y
         sudo apt-get -y install sqlite3
     fi
-elif [[ "${OS}" == "darwin" ]]; then
+elif [[ "${OPERATINGSYSTEM}" == "darwin" ]]; then
     # we don't want to upgrade boost if we already have it, as it will try to update
     # other components.
     brew update

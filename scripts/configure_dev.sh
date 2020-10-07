@@ -34,7 +34,7 @@ SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 echo "/scripts/configure_dev.sh - trying to execute ${SCRIPTPATH}/ostype.sh"
 
-OS=$("${SCRIPTPATH}/ostype.sh")
+OPERATINGSYSTEM=$("${SCRIPTPATH}/ostype.sh")
 
 echo "/scripts/configure_dev.sh after ostype"
 
@@ -78,9 +78,9 @@ function install_windows_shellcheck() {
 }
 
 
-echo "OS = ${OS}"
+echo "OPERATINGSYSTEM = ${OPERATINGSYSTEM}"
 
-if [ "${OS}" = "linux" ]; then
+if [ "${OPERATINGSYSTEM}" = "linux" ]; then
     if ! which sudo > /dev/null
     then
         apt-get update
@@ -89,7 +89,7 @@ if [ "${OS}" = "linux" ]; then
 
     sudo apt-get update
     sudo apt-get install -y libboost-all-dev expect jq autoconf shellcheck sqlite3 python3-venv
-elif [ "${OS}" = "darwin" ]; then
+elif [ "${OPERATINGSYSTEM}" = "darwin" ]; then
     brew update
     brew tap homebrew/cask
     install_or_upgrade pkg-config
@@ -100,7 +100,7 @@ elif [ "${OS}" = "darwin" ]; then
     install_or_upgrade automake
     install_or_upgrade shellcheck
     install_or_upgrade python3
-elif [ "${OS}" = "windows" ]; then
+elif [ "${OPERATINGSYSTEM}" = "windows" ]; then
     pacman -S --disable-download-timeout --noconfirm git automake autoconf m4 libtool make mingw-w64-x86_64-gcc mingw-w64-x86_64-go mingw-w64-x86_64-boost mingw-w64-x86_64-python mingw-w64-x86_64-jq unzip procps
     if [ $? -ne 0 ]
     then
