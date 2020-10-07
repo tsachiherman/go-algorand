@@ -69,6 +69,8 @@ function install_windows_shellcheck() {
     return 0
 }
 
+echo "1"
+
 if [ "${OS}" = "linux" ]; then
     if ! which sudo > /dev/null
     then
@@ -110,8 +112,14 @@ elif [ "${OS}" = "windows" ]; then
     cp /mingw64/bin/libwinpthread-1.dll $GOPATH/bin/ 
 fi
 
+echo "2"
+
 if ${SKIP_GO_DEPS} ; then
     exit 0
 fi
 
+echo "3"
+
 "$SCRIPTPATH"/configure_dev-deps.sh
+
+echo "4"
