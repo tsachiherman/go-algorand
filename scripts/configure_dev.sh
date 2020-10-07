@@ -32,7 +32,7 @@ echo "/scripts/configure_dev.sh after getopts"
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
-echo "/scripts/configure_dev.sh after dirname"
+echo "/scripts/configure_dev.sh - trying to execute ${SCRIPTPATH}/ostype.sh"
 
 OS=$("${SCRIPTPATH}/ostype.sh")
 
