@@ -26,24 +26,6 @@ elif [[ "${OPERATINGSYSTEM}" == "darwin" ]]; then
     brew update
     brew tap homebrew/cask
     brew pin boost || true
-elif [[ "${OPERATINGSYSTEM}" == "windows" ]]; then
-    [[ ! -f C:/tools/msys64/msys2_shell.cmd ]] && rm -rf C:/tools/msys64
-    choco uninstall -y mingw
-    choco upgrade --no-progress -y msys2
-    export msys2='cmd //C RefreshEnv.cmd '
-    export msys2+='& set MSYS=winsymlinks:nativestrict '
-    export msys2+='& C:\\tools\\msys64\\msys2_shell.cmd -defterm -no-start'
-    export mingw64="$msys2 -mingw64 -full-path -here -c "\"\$@"\" --"
-    export msys2+=" -msys2 -c "\"\$@"\" --"
-    #$msys2 pacman --sync --noconfirm --needed mingw-w64-x86_64-toolchain
-    echo "$msys2 pacman" > /c/Windows/pacman.cmd
-    chmod 777 /c/Windows/pacman.cmd
-    pacman --sync --noconfirm --needed mingw-w64-x86_64-toolchain
-    ## Install more MSYS2 packages from https://packages.msys2.org/base here
-    taskkill //IM gpg-agent.exe //F  # https://travis-ci.community/t/4967
-    export PATH=/C/tools/msys64/mingw64/bin:$PATH
-    export MAKE=mingw32-make  # so that Autotools can find it
-    shopt -s expand_aliases
 fi
 
 "${SCRIPTPATH}/../configure_dev.sh"
