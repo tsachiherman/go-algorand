@@ -28,6 +28,7 @@ jobs:
     - stage: build_commit
       os: windows
       name: Windows x64 Build
+      language:
       addons:
         apt:
           packages:
