@@ -156,7 +156,7 @@ cache:
 
 before_install:
   # Disable sometimes-broken sources.list in Travis base images
-  - if [ "$TRAVIS_OS_NAME" == "linux" ]; sudo rm -vf /etc/apt/sources.list.d/*; fi;
+  - if [ "$TRAVIS_OS_NAME" == "linux" ]; then sudo rm -vf /etc/apt/sources.list.d/*; fi
 
 addons:
   apt:
