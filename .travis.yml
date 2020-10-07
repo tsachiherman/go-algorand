@@ -26,11 +26,6 @@ jobs:
     - name: Test Release Builds
   include:
     - stage: build_commit
-      os: linux
-      script:
-        - scripts/travis/build_test.sh
-
-    - stage: build_pr
       os: windows
       name: Windows x64 Build
       addons:
@@ -39,7 +34,7 @@ jobs:
       script:
         - scripts/travis/build_test.sh
 
-    - stage: build_prx
+    - stage: build_pr
       os: linux
       name: Ubuntu AMD64 Build
       script:
