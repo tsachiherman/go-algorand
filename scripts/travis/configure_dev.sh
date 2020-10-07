@@ -3,6 +3,8 @@
 # keep script execution on errors
 set +e
 
+echo "/scripts/travis/configure_dev.sh called"
+
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 OS=$("${SCRIPTPATH}/../ostype.sh")
 ARCH=$("${SCRIPTPATH}/../archtype.sh")
@@ -25,6 +27,8 @@ elif [[ "${OS}" == "darwin" ]]; then
     brew tap homebrew/cask
     brew pin boost || true
 fi
+
+echo "calling /scripts/configure_dev.sh"
 
 "${SCRIPTPATH}/../configure_dev.sh"
 exit $?
