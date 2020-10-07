@@ -32,7 +32,11 @@ echo "/scripts/configure_dev.sh after getopts"
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
+echo "/scripts/configure_dev.sh after dirname"
+
 OS=$("$SCRIPTPATH"/ostype.sh)
+
+echo "/scripts/configure_dev.sh after ostype"
 
 function install_or_upgrade {
     if ${FORCE} ; then
