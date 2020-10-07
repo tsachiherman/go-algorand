@@ -29,10 +29,12 @@ jobs:
     - stage: build_commit
       os: windows
       name: Windows x64 Build
-      language: bash
+      language: shell
       addons:
         apt:
           packages:
+      before_install: 
+        - whoami
       script:
         - scripts/travis/build_test.sh
 
