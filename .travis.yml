@@ -33,6 +33,9 @@ jobs:
     - stage: build_pr
       os: windows
       name: Windows x64 Build
+      addons:
+        apt:
+          packages:
       script:
         - scripts/travis/build_test.sh
 
