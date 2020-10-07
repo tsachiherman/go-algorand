@@ -28,6 +28,8 @@ while getopts ":sfh" opt; do
   esac
 done
 
+echo "/scripts/configure_dev.sh after getopts"
+
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 OS=$("$SCRIPTPATH"/ostype.sh)
@@ -70,6 +72,7 @@ function install_windows_shellcheck() {
 
     return 0
 }
+
 
 echo "OS = ${OS}"
 
