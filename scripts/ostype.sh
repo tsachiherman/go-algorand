@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-
-# we want to test this early, since uname migth not be available on windows.
-if [[ "${OS}" == *"Windows"* ]]; then
-    echo "windows"
-fi
+set -e
 
 UNAME=$(uname)
 
@@ -11,7 +7,7 @@ if [ "${UNAME}" = "Darwin" ]; then
     echo "darwin"
 elif [ "${UNAME}" = "Linux" ]; then
     echo "linux"
-elif [[ "${UNAME}" == *"MINGW"* ]]; then
+elif [[ "${UNAME}" == *"MINGW"* ]] || [[ ${UNAME} == *"MSYS_NT"* ]]; then
     echo "windows"
 else
     echo "unsupported"
