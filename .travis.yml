@@ -34,6 +34,7 @@ jobs:
         apt:
           packages:
       before_install:
+      - |-
         case $TRAVIS_OS_NAME in
         windows)
           [[ ! -f C:/tools/msys64/msys2_shell.cmd ]] && rm -rf C:/tools/msys64
@@ -52,6 +53,7 @@ jobs:
           ;;
         esac
       before_cache:
+      - |-
           case $TRAVIS_OS_NAME in
           windows)
             # https://unix.stackexchange.com/a/137322/107554
