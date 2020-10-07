@@ -48,7 +48,7 @@ eval $(~/gimme "${GOLANG_VERSION}")
 # travis sometimes fail to download a dependency. trying multiple times might help.
 for (( attempt=1; attempt<=5; attempt++ ))
 do
-    scripts/travis/configure_dev.sh
+    ${SCRIPTPATH}/travis/configure_dev.sh
     ERR=$?
     if [ "${ERR}" == "0" ]; then
         CONFIGURE_SUCCESS=true
