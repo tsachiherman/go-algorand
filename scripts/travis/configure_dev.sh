@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 
+echo "1"
 # keep script execution on errors
 set +e
+
+echo "2"
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 OS=$("${SCRIPTPATH}/../ostype.sh")
 ARCH=$("${SCRIPTPATH}/../archtype.sh")
+
+echo "3"
 
 if [[ "${OS}" == "linux" ]]; then
     if [[ "${ARCH}" == "arm64" ]]; then
@@ -25,6 +30,8 @@ elif [[ "${OS}" == "darwin" ]]; then
     brew tap homebrew/cask
     brew pin boost || true
 fi
+
+echo "4"
 
 "${SCRIPTPATH}/../configure_dev.sh"
 exit $?
