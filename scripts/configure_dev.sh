@@ -69,6 +69,8 @@ function install_windows_shellcheck() {
     return 0
 }
 
+echo "OS = ${OS}"
+
 if [ "${OS}" = "linux" ]; then
     if ! which sudo > /dev/null
     then
@@ -114,7 +116,6 @@ if ${SKIP_GO_DEPS} ; then
     exit 0
 fi
 
-echo "OS = ${OS}"
 echo "configure_dev-deps.sh -> ${SCRIPTPATH}/configure_dev-deps.sh"
 
 "${SCRIPTPATH}"/configure_dev-deps.sh
