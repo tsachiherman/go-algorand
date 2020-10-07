@@ -34,6 +34,8 @@ SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 
 echo "/scripts/configure_dev.sh - trying to execute ${SCRIPTPATH}/ostype.sh"
 
+uname
+
 OPERATINGSYSTEM=$("${SCRIPTPATH}/ostype.sh")
 
 echo "/scripts/configure_dev.sh after ostype"
