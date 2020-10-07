@@ -31,6 +31,12 @@ jobs:
         - scripts/travis/build_test.sh
 
     - stage: build_pr
+      os: windows
+      name: Windows x64 Build
+      script:
+        - scripts/travis/build_test.sh
+
+    - stage: build_prx
       os: linux
       name: Ubuntu AMD64 Build
       script:
