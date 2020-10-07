@@ -114,4 +114,7 @@ if ${SKIP_GO_DEPS} ; then
     exit 0
 fi
 
-"$SCRIPTPATH"/configure_dev-deps.sh
+echo "OS = ${OS}"
+echo "configure_dev-deps.sh -> ${SCRIPTPATH}/configure_dev-deps.sh"
+
+"${SCRIPTPATH}"/configure_dev-deps.sh
