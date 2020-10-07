@@ -9,6 +9,8 @@ Options:
     -f        Force dependencies to be installed (May overwrite existing files)
 "
 
+echo "/scripts/configure_dev.sh called"
+
 SKIP_GO_DEPS=false
 FORCE=false
 while getopts ":sfh" opt; do
