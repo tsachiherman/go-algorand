@@ -1,6 +1,7 @@
 os: linux
 dist: bionic
 go_import_path: github.com/algorand/go-algorand
+language: shell
 
 # Don't build tags
 if: tag IS blank
