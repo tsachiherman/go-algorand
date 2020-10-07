@@ -34,7 +34,6 @@ jobs:
         apt:
           packages:
       before_install: 
-        - whoami
       script:
         - scripts/travis/build_test.sh
 
@@ -157,7 +156,7 @@ cache:
 
 before_install:
   # Disable sometimes-broken sources.list in Travis base images
-  - sudo rm -vf /etc/apt/sources.list.d/*
+  - sudo rm -vf /etc/apt/sources.list.d/*; fi;
 
 addons:
   apt:
