@@ -9,8 +9,6 @@ Options:
     -f        Force dependencies to be installed (May overwrite existing files)
 "
 
-echo "/scripts/configure_dev.sh called"
-
 SKIP_GO_DEPS=false
 FORCE=false
 while getopts ":sfh" opt; do
@@ -28,17 +26,8 @@ while getopts ":sfh" opt; do
   esac
 done
 
-echo "/scripts/configure_dev.sh after getopts"
-
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
-
-echo "/scripts/configure_dev.sh - trying to execute ${SCRIPTPATH}/ostype.sh"
-
-uname
-
 OPERATINGSYSTEM=$("${SCRIPTPATH}/ostype.sh")
-
-echo "/scripts/configure_dev.sh after ostype"
 
 function install_or_upgrade {
     if ${FORCE} ; then
@@ -78,9 +67,6 @@ function install_windows_shellcheck() {
 
     return 0
 }
-
-
-echo "OPERATINGSYSTEM = ${OPERATINGSYSTEM}"
 
 if [ "${OPERATINGSYSTEM}" = "linux" ]; then
     if ! which sudo > /dev/null
