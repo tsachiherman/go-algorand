@@ -89,8 +89,9 @@ fi
 
 echo "Checking Enlistment..."
 git config --global core.autocrlf true
+git config --global core.whitespace blank-at-eol,blank-at-eof,space-before-tab,-indent-with-non-tab,-tab-in-indent,cr-at-eol
 if [[ -n $(git status --porcelain) ]]; then
-    echo Enlistment is dirty - did you forget to run make?
+    echo "Enlistment is dirty - did you forget to run make?"
     git status -s
     git diff
     exit 1
