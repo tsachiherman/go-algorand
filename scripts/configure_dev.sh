@@ -27,8 +27,7 @@ while getopts ":sfh" opt; do
 done
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
-
-OS=$("$SCRIPTPATH"/ostype.sh)
+OS=$("${SCRIPTPATH}/ostype.sh")
 
 function install_or_upgrade {
     if ${FORCE} ; then
@@ -90,15 +89,12 @@ elif [ "${OS}" = "darwin" ]; then
     install_or_upgrade shellcheck
     install_or_upgrade python3
 elif [ "${OS}" = "windows" ]; then
-    pacman -S --disable-download-timeout --noconfirm git automake autoconf m4 libtool make mingw-w64-x86_64-gcc mingw-w64-x86_64-go mingw-w64-x86_64-boost mingw-w64-x86_64-python mingw-w64-x86_64-jq unzip procps
+    $msys2 pacman -S --disable-download-timeout --noconfirm git automake autoconf m4 libtool make mingw-w64-x86_64-gcc mingw-w64-x86_64-boost mingw-w64-x86_64-python mingw-w64-x86_64-jq unzip procps
     if [ $? -ne 0 ]
     then
         echo "Error installing pacman dependencies"
         exit 1
     fi
-
-    # Golang probably is not installed under MSYS2 so add the environment variable temporarily
-    export GOPATH=$HOME/go
 
     install_windows_shellcheck
     if [ $? -ne 0 ]
@@ -107,11 +103,11 @@ elif [ "${OS}" = "windows" ]; then
     fi
 
     # This is required because http://github.com/karalabe/hid library compiles with non-static libraries
-    cp /mingw64/bin/libwinpthread-1.dll $GOPATH/bin/ 
+    #cp /mingw64/bin/libwinpthread-1.dll $GOPATH/bin/ 
 fi
 
 if ${SKIP_GO_DEPS} ; then
     exit 0
 fi
 
-"$SCRIPTPATH"/configure_dev-deps.sh
+"${SCRIPTPATH}"/configure_dev-deps.sh

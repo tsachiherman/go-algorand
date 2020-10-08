@@ -24,6 +24,8 @@ elif [[ "${OS}" == "darwin" ]]; then
     brew update
     brew tap homebrew/cask
     brew pin boost || true
+elif [[ "${OS}" == "windows" ]]; then
+    git config --global core.autocrlf true
 fi
 
 "${SCRIPTPATH}/../configure_dev.sh"
