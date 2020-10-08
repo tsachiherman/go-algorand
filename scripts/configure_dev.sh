@@ -42,7 +42,9 @@ function install_or_upgrade {
 
 function install_windows_shellcheck() {
     version="v0.7.1"
+    echo "downloading..."
     wget https://github.com/koalaman/shellcheck/releases/download/$version/shellcheck-$version.zip -O /tmp/shellcheck-$version.zip
+    echo "done downloading"
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Error downloading shellcheck $version"
