@@ -47,7 +47,8 @@ endif
 ifneq (, $(findstring MINGW,$(UNAME)))
 EXTLDFLAGS := -static-libstdc++ -static-libgcc
 GOLDFLAGS_PLATFORM := -linkmode=external
-export CGO_ENABLED := 1
+#export CGO_ENABLED := 1
+GOBUILDMODE := -buildmode pie
 endif
 
 GOTAGS      := --tags "$(GOTAGSLIST)"
