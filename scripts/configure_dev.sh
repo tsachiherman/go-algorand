@@ -48,18 +48,21 @@ function install_windows_shellcheck() {
         echo "Error downloading shellcheck $version"
         return 1
     fi
+
     unzip -o /tmp/shellcheck-$version.zip shellcheck-$version.exe -d /tmp
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Unable to decompress shellcheck $version"
         return 1
     fi
+
     mv -f /tmp/shellcheck-$version.exe /usr/bin/shellcheck.exe
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Unable to move shellcheck to /usr/bin"
         return 1
     fi
+
     rm /tmp/shellcheck-$version.zip &> /dev/null
 
     return 0
@@ -86,7 +89,8 @@ elif [ "${OPERATINGSYSTEM}" = "darwin" ]; then
     install_or_upgrade shellcheck
     install_or_upgrade python3
 elif [ "${OPERATINGSYSTEM}" = "windows" ]; then
-    $msys2 pacman -S --disable-download-timeout --noconfirm git automake autoconf m4 libtool make mingw-w64-x86_64-gcc mingw-w64-x86_64-go mingw-w64-x86_64-boost mingw-w64-x86_64-python mingw-w64-x86_64-jq unzip procps
+    # $msys2
+    pacman -S --disable-download-timeout --noconfirm git automake autoconf m4 libtool make mingw-w64-x86_64-gcc mingw-w64-x86_64-go mingw-w64-x86_64-boost mingw-w64-x86_64-python mingw-w64-x86_64-jq unzip procps
     if [ $? -ne 0 ]
     then
         echo "Error installing pacman dependencies"
@@ -111,7 +115,5 @@ fi
 if ${SKIP_GO_DEPS} ; then
     exit 0
 fi
-
-echo "configure_dev-deps.sh -> ${SCRIPTPATH}/configure_dev-deps.sh"
 
 "${SCRIPTPATH}"/configure_dev-deps.sh
