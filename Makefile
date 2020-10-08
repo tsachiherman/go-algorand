@@ -107,11 +107,8 @@ ALWAYS:
 
 # build our fork of libsodium, placing artifacts into crypto/lib/ and crypto/include/
 crypto/libs/$(OS_TYPE)/$(ARCH)/lib/libsodium.a:
-	echo "before mkdir -p crypto/copies/$(OS_TYPE)/$(ARCH)"
 	mkdir -p crypto/copies/$(OS_TYPE)/$(ARCH)
-	echo "before cp -R crypto/libsodium-fork crypto/copies/$(OS_TYPE)/$(ARCH)/libsodium-fork"
 	cp -R crypto/libsodium-fork crypto/copies/$(OS_TYPE)/$(ARCH)/libsodium-fork
-	echo "after cp -R crypto/libsodium-fork crypto/copies/$(OS_TYPE)/$(ARCH)/libsodium-fork"
 	cd crypto/copies/$(OS_TYPE)/$(ARCH)/libsodium-fork && \
 		./autogen.sh --prefix $(SRCPATH)/crypto/libs/$(OS_TYPE)/$(ARCH) && \
 		./configure --disable-shared --prefix="$(SRCPATH)/crypto/libs/$(OS_TYPE)/$(ARCH)" && \
