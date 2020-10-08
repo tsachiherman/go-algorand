@@ -25,11 +25,8 @@ function install_go_module {
         exit 1
     fi
 }
-echo "before golint"
+
 install_go_module golang.org/x/lint/golint
-echo "before stringer"
 install_go_module golang.org/x/tools/cmd/stringer
-echo "before swagger"
 install_go_module github.com/go-swagger/go-swagger/cmd/swagger
-echo "before msgp"
 install_go_module github.com/algorand/msgp
