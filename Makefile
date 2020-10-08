@@ -46,16 +46,13 @@ endif
 
 ifneq (, $(findstring MINGW,$(UNAME)))
 EXTLDFLAGS := -static-libstdc++ -static-libgcc
-#GOLDFLAGS_PLATFORM := -linkmode=external
-#export CGO_ENABLED := 1
 export GOBUILDMODE := -buildmode=exe
-#export GOOS := windows
 endif
 
 GOTAGS      := --tags "$(GOTAGSLIST)"
 GOTRIMPATH	:= $(shell go help build | grep -q .-trimpath && echo -trimpath)
 
-GOLDFLAGS_BASE  := $(GOLDFLAGS_PLATFORM) -X github.com/algorand/go-algorand/config.BuildNumber=$(BUILDNUMBER) \
+GOLDFLAGS_BASE  := -X github.com/algorand/go-algorand/config.BuildNumber=$(BUILDNUMBER) \
 		 -X github.com/algorand/go-algorand/config.CommitHash=$(COMMITHASH) \
 		 -X github.com/algorand/go-algorand/config.Branch=$(BUILDBRANCH) \
 		 -X github.com/algorand/go-algorand/config.DefaultDeadlock=$(DEFAULT_DEADLOCK) \
@@ -175,7 +172,6 @@ build: buildsrc gen
 # to cache binaries from time to time on empty NFS
 # dirs
 buildsrc: crypto/libs/$(OS_TYPE)/$(ARCH)/lib/libsodium.a node_exporter NONGO_BIN deps $(ALGOD_API_SWAGGER_INJECT) $(KMD_API_SWAGGER_INJECT)
-	go env && \
 	mkdir -p tmp/go-cache && \
 	touch tmp/go-cache/file.txt && \
 	GOCACHE=$(SRCPATH)/tmp/go-cache go install $(GOTRIMPATH) $(GOTAGS) $(GOBUILDMODE) -ldflags="$(GOLDFLAGS)" ./...
