@@ -46,12 +46,13 @@ endif
 
 ifneq (, $(findstring MINGW,$(UNAME)))
 EXTLDFLAGS := -static-libstdc++ -static-libgcc
+GOLDFLAGS_PLATFORM := -linkmode=external
 endif
 
 GOTAGS      := --tags "$(GOTAGSLIST)"
 GOTRIMPATH	:= $(shell go help build | grep -q .-trimpath && echo -trimpath)
 
-GOLDFLAGS_BASE  := -X github.com/algorand/go-algorand/config.BuildNumber=$(BUILDNUMBER) \
+GOLDFLAGS_BASE  := $(GOLDFLAGS_PLATFORM) -X github.com/algorand/go-algorand/config.BuildNumber=$(BUILDNUMBER) \
 		 -X github.com/algorand/go-algorand/config.CommitHash=$(COMMITHASH) \
 		 -X github.com/algorand/go-algorand/config.Branch=$(BUILDBRANCH) \
 		 -X github.com/algorand/go-algorand/config.DefaultDeadlock=$(DEFAULT_DEADLOCK) \
