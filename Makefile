@@ -46,9 +46,9 @@ endif
 
 ifneq (, $(findstring MINGW,$(UNAME)))
 EXTLDFLAGS := -static-libstdc++ -static-libgcc
-GOLDFLAGS_PLATFORM := -linkmode=external
+#GOLDFLAGS_PLATFORM := -linkmode=external
 #export CGO_ENABLED := 1
-#GOBUILDMODE := -buildmode exe
+export GOBUILDMODE := -buildmode=exe
 #export GOOS := windows
 endif
 
