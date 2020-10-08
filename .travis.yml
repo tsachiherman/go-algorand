@@ -1,6 +1,7 @@
+os: linux
 dist: bionic
 go_import_path: github.com/algorand/go-algorand
-language: go
+language: shell
 
 # Don't build tags
 if: tag IS blank
@@ -26,7 +27,46 @@ jobs:
     - name: Test Release Builds
   include:
     - stage: build_commit
-      os: linux
+      os: windows
+      name: Windows x64 Build
+      language: shell
+      addons:
+        apt:
+          packages:
+      before_install:
+      - |-
+        case $TRAVIS_OS_NAME in
+        windows)
+          [[ ! -f C:/tools/msys64/msys2_shell.cmd ]] && rm -rf C:/tools/msys64
+          choco uninstall -y mingw
+          choco upgrade --no-progress -y msys2
+          export msys2='cmd //C RefreshEnv.cmd '
+          export msys2+='& set MSYS=winsymlinks:nativestrict '
+          export msys2+='& C:\\tools\\msys64\\msys2_shell.cmd -defterm -no-start'
+          export mingw64="$msys2 -mingw64 -full-path -here -c "\"\$@"\" --"
+          export shell="$msys2 -mingw64 -full-path -here -c \$\* --";
+          export msys2+=" -msys2 -c "\"\$@"\" --"
+          $msys2 pacman --sync --noconfirm --needed mingw-w64-x86_64-toolchain
+          ## Install more MSYS2 packages from https://packages.msys2.org/base here
+          taskkill //IM gpg-agent.exe //F  # https://travis-ci.community/t/4967
+          export PATH=/C/tools/msys64/mingw64/bin:$PATH
+          export MAKE=mingw32-make  # so that Autotools can find it
+          ;;
+        esac
+
+      before_cache:
+      - |-
+          case $TRAVIS_OS_NAME in
+          windows)
+            # https://unix.stackexchange.com/a/137322/107554
+            $msys2 pacman --sync --clean --noconfirm
+            ;;
+          esac
+
+      cache:
+        directories:
+          - $HOME/AppData/Local/Temp/chocolatey
+          - /C/tools/msys64
       script:
         - scripts/travis/build_test.sh
 
@@ -149,7 +189,7 @@ cache:
 
 before_install:
   # Disable sometimes-broken sources.list in Travis base images
-  - sudo rm -vf /etc/apt/sources.list.d/*
+  - if [ "$TRAVIS_OS_NAME" == "linux" ]; then sudo rm -vf /etc/apt/sources.list.d/*; fi
 
 addons:
   apt:

@@ -27,8 +27,7 @@ while getopts ":sfh" opt; do
 done
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
-
-OS=$("$SCRIPTPATH"/ostype.sh)
+OPERATINGSYSTEM=$("${SCRIPTPATH}/ostype.sh")
 
 function install_or_upgrade {
     if ${FORCE} ; then
@@ -69,7 +68,7 @@ function install_windows_shellcheck() {
     return 0
 }
 
-if [ "${OS}" = "linux" ]; then
+if [ "${OPERATINGSYSTEM}" = "linux" ]; then
     if ! which sudo > /dev/null
     then
         apt-get update
@@ -78,7 +77,7 @@ if [ "${OS}" = "linux" ]; then
 
     sudo apt-get update
     sudo apt-get install -y libboost-all-dev expect jq autoconf shellcheck sqlite3 python3-venv
-elif [ "${OS}" = "darwin" ]; then
+elif [ "${OPERATINGSYSTEM}" = "darwin" ]; then
     brew update
     brew tap homebrew/cask
     install_or_upgrade pkg-config
@@ -89,8 +88,8 @@ elif [ "${OS}" = "darwin" ]; then
     install_or_upgrade automake
     install_or_upgrade shellcheck
     install_or_upgrade python3
-elif [ "${OS}" = "windows" ]; then
-    pacman -S --disable-download-timeout --noconfirm git automake autoconf m4 libtool make mingw-w64-x86_64-gcc mingw-w64-x86_64-go mingw-w64-x86_64-boost mingw-w64-x86_64-python mingw-w64-x86_64-jq unzip procps
+elif [ "${OPERATINGSYSTEM}" = "windows" ]; then
+    $msys2 pacman -S --disable-download-timeout --noconfirm git automake autoconf m4 libtool make mingw-w64-x86_64-gcc mingw-w64-x86_64-go mingw-w64-x86_64-boost mingw-w64-x86_64-python mingw-w64-x86_64-jq unzip procps
     if [ $? -ne 0 ]
     then
         echo "Error installing pacman dependencies"
@@ -114,4 +113,6 @@ if ${SKIP_GO_DEPS} ; then
     exit 0
 fi
 
-"$SCRIPTPATH"/configure_dev-deps.sh
+echo "configure_dev-deps.sh -> ${SCRIPTPATH}/configure_dev-deps.sh"
+
+"${SCRIPTPATH}"/configure_dev-deps.sh
