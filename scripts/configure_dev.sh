@@ -42,29 +42,24 @@ function install_or_upgrade {
 
 function install_windows_shellcheck() {
     version="v0.7.1"
-    echo "downloading..."
     wget https://github.com/koalaman/shellcheck/releases/download/$version/shellcheck-$version.zip -O /tmp/shellcheck-$version.zip
-    echo "done downloading"
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Error downloading shellcheck $version"
         return 1
     fi
-echo "before unziping"
     unzip -o /tmp/shellcheck-$version.zip shellcheck-$version.exe -d /tmp
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Unable to decompress shellcheck $version"
         return 1
     fi
-echo "before moving"
     mv -f /tmp/shellcheck-$version.exe /usr/bin/shellcheck.exe
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Unable to move shellcheck to /usr/bin"
         return 1
     fi
-echo "before removing"
     rm /tmp/shellcheck-$version.zip &> /dev/null
 
     return 0
@@ -106,6 +101,8 @@ elif [ "${OPERATINGSYSTEM}" = "windows" ]; then
     then
         exit 1
     fi
+
+    mkdir -p $GOPATH/bin
 
     # This is required because http://github.com/karalabe/hid library compiles with non-static libraries
     cp /mingw64/bin/libwinpthread-1.dll $GOPATH/bin/ 

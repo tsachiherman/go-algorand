@@ -3,8 +3,6 @@
 # keep script execution on errors
 set +e
 
-echo "/scripts/travis/configure_dev.sh called"
-
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 OPERATINGSYSTEM=$("${SCRIPTPATH}/../ostype.sh")
 ARCH=$("${SCRIPTPATH}/../archtype.sh")
