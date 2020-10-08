@@ -109,7 +109,7 @@ elif [ "${OS}" = "windows" ]; then
     mkdir -p $GOPATH/bin
 
     # This is required because http://github.com/karalabe/hid library compiles with non-static libraries
-    cp /mingw64/bin/libwinpthread-1.dll $GOPATH/bin/ 
+    #cp /mingw64/bin/libwinpthread-1.dll $GOPATH/bin/ 
 fi
 
 if ${SKIP_GO_DEPS} ; then
