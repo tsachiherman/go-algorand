@@ -88,7 +88,7 @@ else
 fi
 
 echo "Checking Enlistment..."
-
+git config --global core.autocrlf true
 if [[ -n $(git status --porcelain) ]]; then
     echo Enlistment is dirty - did you forget to run make?
     git status -s
