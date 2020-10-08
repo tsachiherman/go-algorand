@@ -48,21 +48,21 @@ function install_windows_shellcheck() {
         echo "Error downloading shellcheck $version"
         return 1
     fi
-
+echo "before unziping"
     unzip -o /tmp/shellcheck-$version.zip shellcheck-$version.exe -d /tmp
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Unable to decompress shellcheck $version"
         return 1
     fi
-
+echo "before moving"
     mv -f /tmp/shellcheck-$version.exe /usr/bin/shellcheck.exe
     if [ $? -ne 0 ]; then
         rm /tmp/shellcheck-$version.zip &> /dev/null
         echo "Unable to move shellcheck to /usr/bin"
         return 1
     fi
-
+echo "before removing"
     rm /tmp/shellcheck-$version.zip &> /dev/null
 
     return 0
