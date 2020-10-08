@@ -48,8 +48,8 @@ ifneq (, $(findstring MINGW,$(UNAME)))
 EXTLDFLAGS := -static-libstdc++ -static-libgcc
 GOLDFLAGS_PLATFORM := -linkmode=external
 #export CGO_ENABLED := 1
-#GOBUILDMODE := -buildmode pie
-export GOOS := windows
+#GOBUILDMODE := -buildmode exe
+#export GOOS := windows
 endif
 
 GOTAGS      := --tags "$(GOTAGSLIST)"
@@ -175,6 +175,7 @@ build: buildsrc gen
 # to cache binaries from time to time on empty NFS
 # dirs
 buildsrc: crypto/libs/$(OS_TYPE)/$(ARCH)/lib/libsodium.a node_exporter NONGO_BIN deps $(ALGOD_API_SWAGGER_INJECT) $(KMD_API_SWAGGER_INJECT)
+	go env && \
 	mkdir -p tmp/go-cache && \
 	touch tmp/go-cache/file.txt && \
 	GOCACHE=$(SRCPATH)/tmp/go-cache go install $(GOTRIMPATH) $(GOTAGS) $(GOBUILDMODE) -ldflags="$(GOLDFLAGS)" ./...
