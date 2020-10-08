@@ -1,5 +1,5 @@
 UNAME := $(shell uname)
-ifneq (, $(findstring MINGW,$(UNAME)))
+ifneq (, $(findstring MINGW,$(UNAME))$(findstring MSYS_NT,$(UNAME)))
 #Gopath is not saved across sessions, probably existing Windows env vars, override them
 export GOPATH := ${HOME}/go
 GOPATH1 := $(GOPATH)
@@ -44,11 +44,12 @@ endif
 endif
 endif
 
-ifneq (, $(findstring MINGW,$(UNAME)))
+ifneq (, $(findstring MINGW,$(UNAME))$(findstring MSYS_NT,$(UNAME)))
 EXTLDFLAGS := -static-libstdc++ -static-libgcc
 GOLDFLAGS_PLATFORM := -linkmode=external
 #export CGO_ENABLED := 1
-GOBUILDMODE := -buildmode pie
+#GOBUILDMODE := -buildmode pie
+#export GOOS := windows
 endif
 
 GOTAGS      := --tags "$(GOTAGSLIST)"
