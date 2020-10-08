@@ -4,10 +4,10 @@
 set +e
 
 SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
-OPERATINGSYSTEM=$("${SCRIPTPATH}/../ostype.sh")
+OS=$("${SCRIPTPATH}/../ostype.sh")
 ARCH=$("${SCRIPTPATH}/../archtype.sh")
 
-if [[ "${OPERATINGSYSTEM}" == "linux" ]]; then
+if [[ "${OS}" == "linux" ]]; then
     if [[ "${ARCH}" == "arm64" ]]; then
         set -e
         sudo apt-get update -y
@@ -18,12 +18,14 @@ if [[ "${OPERATINGSYSTEM}" == "linux" ]]; then
         sudo apt-get update -y
         sudo apt-get -y install sqlite3
     fi
-elif [[ "${OPERATINGSYSTEM}" == "darwin" ]]; then
+elif [[ "${OS}" == "darwin" ]]; then
     # we don't want to upgrade boost if we already have it, as it will try to update
     # other components.
     brew update
     brew tap homebrew/cask
     brew pin boost || true
+elif [[ "${OS}" == "windows" ]]; then
+    git config --global core.autocrlf true
 fi
 
 "${SCRIPTPATH}/../configure_dev.sh"
