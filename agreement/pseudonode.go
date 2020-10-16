@@ -92,6 +92,7 @@ type pseudonodeBaseTask struct {
 	node          *asyncPseudonode
 	context       context.Context // the context associated with that task; context might expire for a single task but remain valid for others.
 	out           chan externalEvent
+	ledger        LedgerReader
 	participation []account.Participation
 }
 
@@ -203,6 +204,7 @@ func (n asyncPseudonode) makeProposalsTask(ctx context.Context, r round, p perio
 			node:          &n,
 			context:       ctx,
 			participation: participation,
+			ledger:        n.accountTracker.getRoundAccountTracker(r),
 			out:           make(chan externalEvent),
 		},
 		round:  r,
@@ -222,6 +224,7 @@ func (n asyncPseudonode) makeVotesTask(ctx context.Context, r round, p period, s
 			node:          &n,
 			context:       ctx,
 			participation: participation,
+			ledger:        n.accountTracker.getRoundAccountTracker(r),
 			out:           make(chan externalEvent),
 		},
 		round:            r,
@@ -352,15 +355,13 @@ func (t pseudonodeVotesTask) execute(verifier *AsyncVoteVerifier, quit chan stru
 		return
 	}
 
-	ledger := t.node.accountTracker.getRoundAccountTracker(t.round)
-
-	unverifiedVotes := t.node.makeVotes(ledger, t.round, t.period, t.step, t.prop, t.participation)
+	unverifiedVotes := t.node.makeVotes(t.ledger, t.round, t.period, t.step, t.prop, t.participation)
 	t.node.log.Infof("pseudonode: made %v votes", len(unverifiedVotes))
 	results := make(chan asyncVerifyVoteResponse, len(unverifiedVotes))
 
 	for i, uv := range unverifiedVotes {
 		msg := message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: uv}
-		verifier.verifyVote(context.TODO(), ledger, uv, i, msg, results)
+		verifier.verifyVote(context.TODO(), t.ledger, uv, i, msg, results)
 	}
 
 	orderedResults := make([]asyncVerifyVoteResponse, len(unverifiedVotes))
@@ -452,9 +453,7 @@ func (t pseudonodeProposalsTask) execute(verifier *AsyncVoteVerifier, quit chan 
 		return
 	}
 
-	ledger := t.node.accountTracker.getRoundAccountTracker(t.round)
-
-	payloads, votes := t.node.makeProposals(ledger, t.round, t.period, t.participation)
+	payloads, votes := t.node.makeProposals(t.ledger, t.round, t.period, t.participation)
 	fields := logging.Fields{
 		"Context":      "Agreement",
 		"Type":         logspec.ProposalAssembled.String(),
@@ -472,7 +471,7 @@ func (t pseudonodeProposalsTask) execute(verifier *AsyncVoteVerifier, quit chan 
 	results := make(chan asyncVerifyVoteResponse, len(votes))
 	for i, uv := range votes {
 		msg := message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: uv}
-		verifier.verifyVote(context.TODO(), ledger, uv, i, msg, results)
+		verifier.verifyVote(context.TODO(), t.ledger, uv, i, msg, results)
 	}
 
 	cryptoOutputs := make([]asyncVerifyVoteResponse, len(votes))
