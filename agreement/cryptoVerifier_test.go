@@ -142,7 +142,8 @@ func TestCryptoVerifierBuffers(t *testing.T) {
 	ledger, addresses, selections, votings := readOnlyFixture100()
 	ctx := context.Background()
 
-	verifier := makeCryptoVerifier(ledger, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
+	accountTracker := makeAccountTracker(ledger, serviceLogger{logging.Base()})
+	verifier := makeCryptoVerifier(accountTracker, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
 
 	msgTypes := []protocol.Tag{protocol.AgreementVoteTag, protocol.ProposalPayloadTag, protocol.VoteBundleTag}
 
@@ -279,7 +280,8 @@ func BenchmarkCryptoVerifierVoteVertification(b *testing.B) {
 	ledger, addresses, selections, votings := readOnlyFixture100()
 	ctx := context.Background()
 
-	verifier := makeCryptoVerifier(ledger, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
+	accountTracker := makeAccountTracker(ledger, serviceLogger{logging.Base()})
+	verifier := makeCryptoVerifier(accountTracker, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
 	c := verifier.Verified(protocol.AgreementVoteTag)
 
 	senderIdx := findSender(ledger, basics.Round(300), 0, 0, addresses, selections)
@@ -297,6 +299,7 @@ func BenchmarkCryptoVerifierVoteVertification(b *testing.B) {
 
 func BenchmarkCryptoVerifierProposalVertification(b *testing.B) {
 	ledger, addresses, selections, votings := readOnlyFixture100()
+	accountTracker := makeAccountTracker(ledger, serviceLogger{logging.Base()})
 
 	participations := make([]account.Participation, len(selections))
 	for i := range selections {
@@ -309,21 +312,21 @@ func BenchmarkCryptoVerifierProposalVertification(b *testing.B) {
 	}
 
 	pn := &asyncPseudonode{
-		factory:   testBlockFactory{Owner: 0},
-		validator: testBlockValidator{},
-		keys:      simpleKeyManager(participations),
-		ledger:    ledger,
-		log:       serviceLogger{logging.Base()},
+		factory:        testBlockFactory{Owner: 0},
+		validator:      testBlockValidator{},
+		keys:           simpleKeyManager(participations),
+		accountTracker: accountTracker,
+		log:            serviceLogger{logging.Base()},
 	}
 
 	Period := period(0)
 	participation := pn.getParticipations("BenchmarkCryptoVerifierProposalVertification", ledger.NextRound())
 
-	proposals, _ := pn.makeProposals(ledger.NextRound(), Period, participation)
+	proposals, _ := pn.makeProposals(accountTracker.getRoundAccountTracker(ledger.NextRound()), ledger.NextRound(), Period, participation)
 
 	ctx := context.Background()
 
-	verifier := makeCryptoVerifier(ledger, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
+	verifier := makeCryptoVerifier(accountTracker, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
 	c := verifier.Verified(protocol.ProposalPayloadTag)
 	request := cryptoProposalRequest{
 		message: message{
@@ -348,7 +351,8 @@ func BenchmarkCryptoVerifierProposalVertification(b *testing.B) {
 func BenchmarkCryptoVerifierBundleVertification(b *testing.B) {
 	ledger, addresses, selections, votings := readOnlyFixture7000()
 	ctx := context.Background()
-	verifier := makeCryptoVerifier(ledger, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
+	accountTracker := makeAccountTracker(ledger, serviceLogger{logging.Base()})
+	verifier := makeCryptoVerifier(accountTracker, testBlockValidator{}, MakeAsyncVoteVerifier(nil), logging.Base())
 	c := verifier.Verified(protocol.VoteBundleTag)
 
 	Step := step(5)

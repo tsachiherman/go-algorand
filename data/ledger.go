@@ -45,22 +45,22 @@ type Ledger struct {
 
 	log logging.Logger
 
-	// a two-item moving window cache for the total number of online circulating coins
-	lastRoundCirculation atomic.Value
+	// a two-item moving window cache for the total number of online circulating coins and reward level
+	lastRoundTotals atomic.Value
 	// a two-item moving window cache for the round seed
 	lastRoundSeed atomic.Value
 }
 
-// roundCirculationPair used to hold a pair of matching round number and the amount of online money
-type roundCirculationPair struct {
-	round       basics.Round
-	onlineMoney basics.MicroAlgos
+// roundTotalsPair used to hold a pair of matching round number and the totals accounts data
+type roundTotalsPair struct {
+	round  basics.Round
+	totals ledger.AccountTotals
 }
 
-// roundCirculation is the cache for the circulating coins
-type roundCirculation struct {
-	// elements holds several round-onlineMoney pairs
-	elements [2]roundCirculationPair
+// roundTotals is the cache for the account totals
+type roundTotals struct {
+	// elements holds several round-totals pairs
+	elements [2]roundTotalsPair
 }
 
 // roundSeedPair is the cache for a single seed at a given round
@@ -218,11 +218,11 @@ func (l *Ledger) NextRound() basics.Round {
 
 // Circulation implements agreement.Ledger.Circulation.
 func (l *Ledger) Circulation(r basics.Round) (basics.MicroAlgos, error) {
-	circulation, cached := l.lastRoundCirculation.Load().(roundCirculation)
+	cachedTotals, cached := l.lastRoundTotals.Load().(roundTotals)
 	if cached && r != basics.Round(0) {
-		for _, element := range circulation.elements {
+		for _, element := range cachedTotals.elements {
 			if element.round == r {
-				return element.onlineMoney, nil
+				return element.totals.Online.Money, nil
 			}
 		}
 	}
@@ -232,19 +232,50 @@ func (l *Ledger) Circulation(r basics.Round) (basics.MicroAlgos, error) {
 		return basics.MicroAlgos{}, err
 	}
 
-	if !cached || r > circulation.elements[1].round {
-		l.lastRoundCirculation.Store(
-			roundCirculation{
-				elements: [2]roundCirculationPair{
-					circulation.elements[1],
-					roundCirculationPair{
-						round:       r,
-						onlineMoney: totals.Online.Money},
+	if !cached || r > cachedTotals.elements[1].round {
+		l.lastRoundTotals.Store(
+			roundTotals{
+				elements: [2]roundTotalsPair{
+					cachedTotals.elements[1],
+					roundTotalsPair{
+						round:  r,
+						totals: totals},
 				},
 			})
 	}
 
 	return totals.Online.Money, nil
+}
+
+// RewardsLevel implements agreement.Ledger.RewardsLevel.
+func (l *Ledger) RewardsLevel(r basics.Round) (uint64, error) {
+	cachedTotals, cached := l.lastRoundTotals.Load().(roundTotals)
+	if cached && r != basics.Round(0) {
+		for _, element := range cachedTotals.elements {
+			if element.round == r {
+				return element.totals.RewardsLevel, nil
+			}
+		}
+	}
+
+	totals, err := l.Totals(r)
+	if err != nil {
+		return uint64(0), err
+	}
+
+	if !cached || r > cachedTotals.elements[1].round {
+		l.lastRoundTotals.Store(
+			roundTotals{
+				elements: [2]roundTotalsPair{
+					cachedTotals.elements[1],
+					roundTotalsPair{
+						round:  r,
+						totals: totals},
+				},
+			})
+	}
+
+	return totals.RewardsLevel, nil
 }
 
 // Seed gives the VRF seed that was agreed on in a given round,

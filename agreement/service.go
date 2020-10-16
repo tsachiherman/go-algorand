@@ -120,23 +120,27 @@ func (s *Service) Start() {
 	s.done = make(chan struct{})
 
 	s.voteVerifier = MakeAsyncVoteVerifier(s.BacklogPool)
+
+	accountTracker := makeAccountTracker(s.Ledger, s.log)
+
 	s.demux = makeDemux(demuxParams{
 		net:               s.Network,
-		ledger:            s.Ledger,
+		accountTracker:    accountTracker,
 		validator:         s.BlockValidator,
 		voteVerifier:      s.voteVerifier,
 		processingMonitor: s.EventsProcessingMonitor,
 		log:               s.log,
 		monitor:           s.monitor,
 	})
+
 	s.loopback = makePseudonode(pseudonodeParams{
-		factory:      s.BlockFactory,
-		validator:    s.BlockValidator,
-		keys:         s.KeyManager,
-		ledger:       s.Ledger,
-		voteVerifier: s.voteVerifier,
-		log:          s.log,
-		monitor:      s.monitor,
+		factory:        s.BlockFactory,
+		validator:      s.BlockValidator,
+		keys:           s.KeyManager,
+		accountTracker: accountTracker,
+		voteVerifier:   s.voteVerifier,
+		log:            s.log,
+		monitor:        s.monitor,
 	})
 
 	s.persistenceLoop.Start()

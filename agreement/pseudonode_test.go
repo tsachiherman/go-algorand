@@ -141,14 +141,15 @@ func TestPseudonode(t *testing.T) {
 	sLogger := serviceLogger{logging.Base()}
 
 	keyManager := simpleKeyManager(accounts)
+	accountTracker := makeAccountTracker(ledger, sLogger)
 	pb := makePseudonode(pseudonodeParams{
-		factory:      testBlockFactory{Owner: 0},
-		validator:    testBlockValidator{},
-		keys:         keyManager,
-		ledger:       ledger,
-		voteVerifier: MakeAsyncVoteVerifier(nil),
-		log:          sLogger,
-		monitor:      nil,
+		factory:        testBlockFactory{Owner: 0},
+		validator:      testBlockValidator{},
+		keys:           keyManager,
+		accountTracker: accountTracker,
+		voteVerifier:   MakeAsyncVoteVerifier(nil),
+		log:            sLogger,
+		monitor:        nil,
 	})
 	defer pb.Quit()
 	spn := makeSerializedPseudonode(testBlockFactory{Owner: 0}, testBlockValidator{}, keyManager, ledger)
@@ -266,24 +267,26 @@ func TestPseudonode(t *testing.T) {
 }
 
 func makeSerializedPseudonode(factory BlockFactory, validator BlockValidator, keys KeyManager, ledger Ledger) pseudonode {
+	logger := serviceLogger{logging.Base()}
+	accountTracker := makeAccountTracker(ledger, logger)
 	return serializedPseudonode{
 		asyncPseudonode: asyncPseudonode{
-			factory:   factory,
-			validator: validator,
-			keys:      keys,
-			ledger:    ledger,
-			log:       serviceLogger{logging.Base()},
+			factory:        factory,
+			validator:      validator,
+			keys:           keys,
+			accountTracker: accountTracker,
+			log:            logger,
 		},
 	}
 }
 
 func (n serializedPseudonode) MakeProposals(ctx context.Context, r round, p period) (outChan <-chan externalEvent, err error) {
-	verifier := makeCryptoVerifier(n.ledger, n.validator, MakeAsyncVoteVerifier(nil), n.log)
+	verifier := makeCryptoVerifier(n.accountTracker, n.validator, MakeAsyncVoteVerifier(nil), n.log)
 	defer verifier.Quit()
 
 	participation := n.getParticipations("serializedPseudonode.MakeProposals", r)
-
-	proposals, votes := n.makeProposals(r, p, participation)
+	roundLedger := n.accountTracker.getRoundAccountTracker(r)
+	proposals, votes := n.makeProposals(roundLedger, r, p, participation)
 
 	out := make(chan externalEvent, len(proposals)+len(votes))
 	defer close(out)
@@ -293,7 +296,7 @@ func (n serializedPseudonode) MakeProposals(ctx context.Context, r round, p peri
 	verifiedProposals := make([]cryptoResult, len(proposals))
 
 	for i, vote := range votes {
-		verifier.VerifyVote(ctx, cryptoVoteRequest{message: message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: vote}})
+		verifier.VerifyVote(ctx, cryptoVoteRequest{message: message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: vote}, Ledger: roundLedger})
 		select {
 		case cryptoResult, ok := <-verifier.VerifiedVotes():
 			if !ok {
@@ -306,7 +309,7 @@ func (n serializedPseudonode) MakeProposals(ctx context.Context, r round, p peri
 	}
 
 	for i, proposal := range proposals {
-		verifier.VerifyProposal(ctx, cryptoProposalRequest{message: message{Tag: protocol.ProposalPayloadTag, UnauthenticatedProposal: proposal.u()}, Round: r})
+		verifier.VerifyProposal(ctx, cryptoProposalRequest{message: message{Tag: protocol.ProposalPayloadTag, UnauthenticatedProposal: proposal.u()}, Round: r, Ledger: roundLedger})
 		select {
 		case cryptoResult, ok := <-verifier.Verified(protocol.ProposalPayloadTag):
 			if !ok {
@@ -334,12 +337,13 @@ func (n serializedPseudonode) MakeProposals(ctx context.Context, r round, p peri
 }
 
 func (n serializedPseudonode) MakeVotes(ctx context.Context, r round, p period, s step, prop proposalValue, persistStateDone chan error) (outChan chan externalEvent, err error) {
-	verifier := makeCryptoVerifier(n.ledger, n.validator, MakeAsyncVoteVerifier(nil), n.log)
+	verifier := makeCryptoVerifier(n.accountTracker, n.validator, MakeAsyncVoteVerifier(nil), n.log)
 	defer verifier.Quit()
 
 	participation := n.getParticipations("serializedPseudonode.MakeVotes", r)
 
-	votes := n.makeVotes(r, p, s, prop, participation)
+	roundLedger := n.accountTracker.getRoundAccountTracker(r)
+	votes := n.makeVotes(roundLedger, r, p, s, prop, participation)
 
 	out := make(chan externalEvent, len(votes))
 	defer close(out)
@@ -348,7 +352,7 @@ func (n serializedPseudonode) MakeVotes(ctx context.Context, r round, p period, 
 	verifiedVotes := make(verifiedCryptoResults, len(votes))
 
 	for i, vote := range votes {
-		verifier.VerifyVote(ctx, cryptoVoteRequest{message: message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: vote}})
+		verifier.VerifyVote(ctx, cryptoVoteRequest{message: message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: vote}, Ledger: roundLedger})
 		select {
 		case cryptoResult, ok := <-verifier.VerifiedVotes():
 			if !ok {

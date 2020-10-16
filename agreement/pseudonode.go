@@ -69,14 +69,14 @@ type pseudonode interface {
 
 // asyncPseudonode creates proposals and votes asynchronously.
 type asyncPseudonode struct {
-	factory   BlockFactory
-	validator BlockValidator
-	keys      KeyManager
-	ledger    Ledger
-	log       serviceLogger
-	quit      chan struct{}   // a quit signal for the verifier goroutines
-	closeWg   *sync.WaitGroup // frontend waitgroup to get notified when all the verifier goroutines are done.
-	monitor   *coserviceMonitor
+	factory        BlockFactory
+	validator      BlockValidator
+	keys           KeyManager
+	accountTracker *accountTracker
+	log            serviceLogger
+	quit           chan struct{}   // a quit signal for the verifier goroutines
+	closeWg        *sync.WaitGroup // frontend waitgroup to get notified when all the verifier goroutines are done.
+	monitor        *coserviceMonitor
 
 	proposalsVerifier *pseudonodeVerifier // dynamically generated verifier goroutine that manages incoming proposals making request.
 	votesVerifier     *pseudonodeVerifier // dynamically generated verifier goroutine that manages incoming votes making request.
@@ -120,25 +120,25 @@ type verifiedCryptoResults []asyncVerifyVoteResponse
 
 // pseudonodeParams struct provide the parameters required to create a pseudonode
 type pseudonodeParams struct {
-	factory      BlockFactory
-	validator    BlockValidator
-	keys         KeyManager
-	ledger       Ledger
-	voteVerifier *AsyncVoteVerifier
-	log          serviceLogger
-	monitor      *coserviceMonitor
+	factory        BlockFactory
+	validator      BlockValidator
+	keys           KeyManager
+	accountTracker *accountTracker
+	voteVerifier   *AsyncVoteVerifier
+	log            serviceLogger
+	monitor        *coserviceMonitor
 }
 
 func makePseudonode(params pseudonodeParams) pseudonode {
 	pn := asyncPseudonode{
-		factory:   params.factory,
-		validator: params.validator,
-		keys:      params.keys,
-		ledger:    params.ledger,
-		log:       params.log,
-		quit:      make(chan struct{}),
-		closeWg:   &sync.WaitGroup{},
-		monitor:   params.monitor,
+		factory:        params.factory,
+		validator:      params.validator,
+		keys:           params.keys,
+		accountTracker: params.accountTracker,
+		log:            params.log,
+		quit:           make(chan struct{}),
+		closeWg:        &sync.WaitGroup{},
+		monitor:        params.monitor,
 	}
 
 	pn.proposalsVerifier = pn.makePseudonodeVerifier(params.voteVerifier)
@@ -262,7 +262,7 @@ func (n asyncPseudonode) getParticipations(procName string, round basics.Round) 
 }
 
 // makeProposals creates a slice of block proposals for the given round and period.
-func (n asyncPseudonode) makeProposals(round basics.Round, period period, accounts []account.Participation) ([]proposal, []unauthenticatedVote) {
+func (n asyncPseudonode) makeProposals(roundLedger LedgerReader, round basics.Round, period period, accounts []account.Participation) ([]proposal, []unauthenticatedVote) {
 	deadline := time.Now().Add(AssemblyTime)
 	ve, err := n.factory.AssembleBlock(round, deadline)
 	if err != nil {
@@ -275,7 +275,7 @@ func (n asyncPseudonode) makeProposals(round basics.Round, period period, accoun
 	votes := make([]unauthenticatedVote, 0, len(accounts))
 	proposals := make([]proposal, 0, len(accounts))
 	for _, account := range accounts {
-		payload, proposal, err := proposalForBlock(account.Address(), account.VRFSecrets(), ve, period, n.ledger)
+		payload, proposal, err := proposalForBlock(account.Address(), account.VRFSecrets(), ve, period, roundLedger)
 		if err != nil {
 			n.log.Errorf("pseudonode.makeProposals: could not create proposal for block (address %v): %v", account.Address(), err)
 			continue
@@ -283,7 +283,7 @@ func (n asyncPseudonode) makeProposals(round basics.Round, period period, accoun
 
 		// attempt to make the vote
 		rv := rawVote{Sender: account.Address(), Round: round, Period: period, Step: propose, Proposal: proposal}
-		uv, err := makeVote(rv, account.VotingSigner(), account.VRFSecrets(), n.ledger)
+		uv, err := makeVote(rv, account.VotingSigner(), account.VRFSecrets(), roundLedger)
 		if err != nil {
 			n.log.Warnf("pseudonode.makeProposals: could not create vote: %v", err)
 			continue
@@ -299,11 +299,11 @@ func (n asyncPseudonode) makeProposals(round basics.Round, period period, accoun
 
 // makeVotes creates a slice of votes for a given proposal value in a given
 // round, period, and step.
-func (n asyncPseudonode) makeVotes(round basics.Round, period period, step step, proposal proposalValue, participation []account.Participation) []unauthenticatedVote {
+func (n asyncPseudonode) makeVotes(roundLedger LedgerReader, round basics.Round, period period, step step, proposal proposalValue, participation []account.Participation) []unauthenticatedVote {
 	votes := make([]unauthenticatedVote, 0)
 	for _, account := range participation {
 		rv := rawVote{Sender: account.Address(), Round: round, Period: period, Step: step, Proposal: proposal}
-		uv, err := makeVote(rv, account.VotingSigner(), account.VRFSecrets(), n.ledger)
+		uv, err := makeVote(rv, account.VotingSigner(), account.VRFSecrets(), roundLedger)
 		if err != nil {
 			n.log.Warnf("pseudonode.makeVotes: could not create vote: %v", err)
 			continue
@@ -352,12 +352,15 @@ func (t pseudonodeVotesTask) execute(verifier *AsyncVoteVerifier, quit chan stru
 		return
 	}
 
-	unverifiedVotes := t.node.makeVotes(t.round, t.period, t.step, t.prop, t.participation)
+	ledger := t.node.accountTracker.getRoundAccountTracker(t.round)
+
+	unverifiedVotes := t.node.makeVotes(ledger, t.round, t.period, t.step, t.prop, t.participation)
 	t.node.log.Infof("pseudonode: made %v votes", len(unverifiedVotes))
 	results := make(chan asyncVerifyVoteResponse, len(unverifiedVotes))
+
 	for i, uv := range unverifiedVotes {
 		msg := message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: uv}
-		verifier.verifyVote(context.TODO(), t.node.ledger, uv, i, msg, results)
+		verifier.verifyVote(context.TODO(), ledger, uv, i, msg, results)
 	}
 
 	orderedResults := make([]asyncVerifyVoteResponse, len(unverifiedVotes))
@@ -449,7 +452,9 @@ func (t pseudonodeProposalsTask) execute(verifier *AsyncVoteVerifier, quit chan 
 		return
 	}
 
-	payloads, votes := t.node.makeProposals(t.round, t.period, t.participation)
+	ledger := t.node.accountTracker.getRoundAccountTracker(t.round)
+
+	payloads, votes := t.node.makeProposals(ledger, t.round, t.period, t.participation)
 	fields := logging.Fields{
 		"Context":      "Agreement",
 		"Type":         logspec.ProposalAssembled.String(),
@@ -467,7 +472,7 @@ func (t pseudonodeProposalsTask) execute(verifier *AsyncVoteVerifier, quit chan 
 	results := make(chan asyncVerifyVoteResponse, len(votes))
 	for i, uv := range votes {
 		msg := message{Tag: protocol.AgreementVoteTag, UnauthenticatedVote: uv}
-		verifier.verifyVote(context.TODO(), t.node.ledger, uv, i, msg, results)
+		verifier.verifyVote(context.TODO(), ledger, uv, i, msg, results)
 	}
 
 	cryptoOutputs := make([]asyncVerifyVoteResponse, len(votes))

@@ -51,8 +51,8 @@ var eventQueueTokenized = map[protocol.Tag]string{
 //
 // demux is not thread-safe and assumes all calls are serialized.
 type demux struct {
-	crypto cryptoVerifier
-	ledger LedgerReader
+	crypto         cryptoVerifier
+	accountTracker *accountTracker
 
 	rawVotes     <-chan message
 	rawProposals <-chan message
@@ -69,7 +69,7 @@ type demux struct {
 // demuxParams contains the parameters required to initliaze a new demux object
 type demuxParams struct {
 	net               Network
-	ledger            LedgerReader
+	accountTracker    *accountTracker
 	validator         BlockValidator
 	voteVerifier      *AsyncVoteVerifier
 	processingMonitor EventsProcessingMonitor
@@ -82,9 +82,9 @@ type demuxParams struct {
 // It must be called before other methods are called.
 func makeDemux(params demuxParams) (d *demux) {
 	d = new(demux)
-	d.crypto = makeCryptoVerifier(params.ledger, params.validator, params.voteVerifier, params.log)
+	d.crypto = makeCryptoVerifier(params.accountTracker, params.validator, params.voteVerifier, params.log)
 	d.log = params.log
-	d.ledger = params.ledger
+	d.accountTracker = params.accountTracker
 	d.monitor = params.monitor
 	d.queue = make([]<-chan externalEvent, 0)
 	d.processingMonitor = params.processingMonitor
@@ -162,21 +162,21 @@ func (d *demux) tokenizeMessages(ctx context.Context, net Network, tag protocol.
 func (d *demux) verifyVote(ctx context.Context, m message, taskIndex int, r round, p period) {
 	d.UpdateEventsQueue(eventQueueCryptoVerifierVote, 1)
 	d.monitor.inc(cryptoVerifierCoserviceType)
-	d.crypto.VerifyVote(ctx, cryptoVoteRequest{message: m, TaskIndex: taskIndex, Round: r, Period: p})
+	d.crypto.VerifyVote(ctx, cryptoVoteRequest{message: m, TaskIndex: taskIndex, Round: r, Period: p, Ledger: d.accountTracker.getRoundAccountTracker(r)})
 }
 
 // verifyPayload enqueues a proposal payload message to be verified.
 func (d *demux) verifyPayload(ctx context.Context, m message, r round, p period, pinned bool) {
 	d.UpdateEventsQueue(eventQueueCryptoVerifierProposal, 1)
 	d.monitor.inc(cryptoVerifierCoserviceType)
-	d.crypto.VerifyProposal(ctx, cryptoProposalRequest{message: m, Round: r, Period: p, Pinned: pinned})
+	d.crypto.VerifyProposal(ctx, cryptoProposalRequest{message: m, Round: r, Period: p, Pinned: pinned, Ledger: d.accountTracker.getRoundAccountTracker(r)})
 }
 
 // verifyBundle enqueues a bundle message to be verified.
 func (d *demux) verifyBundle(ctx context.Context, m message, r round, p period, s step) {
 	d.UpdateEventsQueue(eventQueueCryptoVerifierBundle, 1)
 	d.monitor.inc(cryptoVerifierCoserviceType)
-	d.crypto.VerifyBundle(ctx, cryptoBundleRequest{message: m, Round: r, Period: p, Certify: s == cert})
+	d.crypto.VerifyBundle(ctx, cryptoBundleRequest{message: m, Round: r, Period: p, Certify: s == cert, Ledger: d.accountTracker.getRoundAccountTracker(r)})
 }
 
 // next blocks until it observes an external input event of interest for the state machine.
@@ -187,7 +187,8 @@ func (d *demux) next(s *Service, deadline time.Duration, fastDeadline time.Durat
 		if !ok {
 			return
 		}
-		proto, err := d.ledger.ConsensusVersion(ParamsRound(e.ConsensusRound()))
+
+		proto, err := d.accountTracker.ConsensusVersion(ParamsRound(e.ConsensusRound()))
 		e = e.AttachConsensusVersion(ConsensusVersionView{Err: makeSerErr(err), Version: proto})
 	}()
 
@@ -238,7 +239,7 @@ func (d *demux) next(s *Service, deadline time.Duration, fastDeadline time.Durat
 	deadlineCh := s.Clock.TimeoutAt(deadline)
 	var fastDeadlineCh <-chan time.Time
 
-	proto, err := d.ledger.ConsensusVersion(ParamsRound(currentRound))
+	proto, err := d.accountTracker.ConsensusVersion(ParamsRound(currentRound))
 	if err == nil && config.Consensus[proto].FastPartitionRecovery {
 		fastDeadlineCh = s.Clock.TimeoutAt(fastDeadline)
 	}
@@ -311,7 +312,7 @@ func (d *demux) next(s *Service, deadline time.Duration, fastDeadline time.Durat
 		if !open {
 			return emptyEvent{}, false
 		}
-		e = setupCompoundMessage(d.ledger, m)
+		e = setupCompoundMessage(d.accountTracker, m)
 		d.UpdateEventsQueue(eventQueueDemux, 1)
 		d.UpdateEventsQueue(eventQueueTokenized[protocol.ProposalPayloadTag], 0)
 		d.monitor.inc(demuxCoserviceType)
@@ -351,7 +352,7 @@ func (d *demux) next(s *Service, deadline time.Duration, fastDeadline time.Durat
 }
 
 // setupCompoundMessage processes compound messages: distinct messages which are delivered together
-func setupCompoundMessage(l LedgerReader, m message) (res externalEvent) {
+func setupCompoundMessage(at *accountTracker, m message) (res externalEvent) {
 	compound := m.CompoundMessage
 	if compound.Vote == (unauthenticatedVote{}) {
 		m.Tag = protocol.ProposalPayloadTag
@@ -362,7 +363,7 @@ func setupCompoundMessage(l LedgerReader, m message) (res externalEvent) {
 
 	tailmsg := message{MessageHandle: m.MessageHandle, Tag: protocol.ProposalPayloadTag, UnauthenticatedProposal: compound.Proposal}
 	synthetic := messageEvent{T: payloadPresent, Input: tailmsg}
-	proto, err := l.ConsensusVersion(ParamsRound(synthetic.ConsensusRound()))
+	proto, err := at.ConsensusVersion(ParamsRound(synthetic.ConsensusRound()))
 	synthetic = synthetic.AttachConsensusVersion(ConsensusVersionView{Err: makeSerErr(err), Version: proto}).(messageEvent)
 
 	m.Tag = protocol.AgreementVoteTag

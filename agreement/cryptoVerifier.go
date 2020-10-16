@@ -83,6 +83,7 @@ type (
 		TaskIndex int             // Caller specific number that would be passed back in the asyncVerifyVoteResponse.TaskIndex field
 		Round     round           // The round that we're going to test against.
 		Period    period          // The period associated with the message we're going to test.
+		Ledger    LedgerReader    // The ledger that is going to be used to retrieve the account data
 		ctx       context.Context // A context for this request, if the context is cancelled then the request is stale.
 	}
 
@@ -92,6 +93,7 @@ type (
 		Round     round           // The round that we're going to test against.
 		Period    period          // The period associated with the message we're going to test.
 		Pinned    bool            // A flag that is set if this is a pinned value for the given round.
+		Ledger    LedgerReader    // The ledger that is going to be used to retrieve the account data
 		ctx       context.Context // A context for this request, if the context is cancelled then the request is stale.
 	}
 
@@ -101,6 +103,7 @@ type (
 		Round     round           // The round that we're going to test against.
 		Period    period          // The period associated with the message we're going to test.
 		Certify   bool            // A flag that set if this is a cert bundle.
+		Ledger    LedgerReader    // The ledger that is going to be used to retrieve the account data
 		ctx       context.Context // A context for this request, if the context is cancelled then the request is stale.
 	}
 
@@ -119,7 +122,7 @@ type (
 		bundles      bundleChanPair
 
 		validator        BlockValidator
-		ledger           LedgerReader
+		acctTracker      *accountTracker
 		proposalContexts pendingRequestsContext
 		log              logging.Logger
 
@@ -150,9 +153,9 @@ type (
 	}
 )
 
-func makeCryptoVerifier(l LedgerReader, v BlockValidator, voteVerifier *AsyncVoteVerifier, logger logging.Logger) cryptoVerifier {
+func makeCryptoVerifier(at *accountTracker, v BlockValidator, voteVerifier *AsyncVoteVerifier, logger logging.Logger) cryptoVerifier {
 	c := &poolCryptoVerifier{
-		ledger:           l,
+		acctTracker:      at,
 		validator:        v,
 		proposalContexts: makePendingRequestsContext(),
 		quit:             make(chan struct{}),
@@ -205,7 +208,7 @@ func (c *poolCryptoVerifier) voteFillWorker(toBundleWait chan<- bundleFuture) {
 			}
 
 			uv := votereq.message.UnauthenticatedVote
-			c.voteVerifier.verifyVote(votereq.ctx, c.ledger, uv, votereq.TaskIndex, votereq.message, c.votes.out)
+			c.voteVerifier.verifyVote(votereq.ctx, votereq.Ledger, uv, votereq.TaskIndex, votereq.message, c.votes.out)
 		case bundlereq, ok := <-bundlesin:
 			if !ok {
 				bundlesin = nil
@@ -216,7 +219,7 @@ func (c *poolCryptoVerifier) voteFillWorker(toBundleWait chan<- bundleFuture) {
 			}
 
 			// this sends messages down c.voteVerifier
-			fn := bundlereq.message.UnauthenticatedBundle.verifyAsync(bundlereq.ctx, c.ledger, c.voteVerifier)
+			fn := bundlereq.message.UnauthenticatedBundle.verifyAsync(bundlereq.ctx, bundlereq.Ledger, c.voteVerifier)
 			future := bundleFuture{
 				message: bundlereq.message,
 				index:   bundlereq.TaskIndex,
@@ -359,7 +362,7 @@ func (c *poolCryptoVerifier) verifyProposalPayload(request cryptoProposalRequest
 	m := request.message
 	up := request.UnauthenticatedProposal
 
-	p, err := up.validate(request.ctx, request.Round, c.ledger, c.validator)
+	p, err := up.validate(request.ctx, request.Round, request.Ledger, c.validator)
 	select {
 	case <-request.ctx.Done():
 		m.Proposal = p

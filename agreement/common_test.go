@@ -336,6 +336,22 @@ func (l *testLedger) Lookup(r basics.Round, a basics.Address) (basics.AccountDat
 	return l.state[a], nil
 }
 
+func (l *testLedger) LookupWithoutRewards(r basics.Round, a basics.Address) (basics.AccountData, basics.Round, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if r >= l.nextRound {
+		err := fmt.Errorf("Lookup called on future round: %v >= %v! (this is probably a bug)", r, l.nextRound)
+		panic(err)
+	}
+
+	if l.maxNumBlocks != 0 && r+round(l.maxNumBlocks) < l.nextRound {
+		return basics.AccountData{}, basics.Round(0), &LedgerDroppedRoundError{}
+	}
+
+	return l.state[a], r, nil
+}
+
 func (l *testLedger) Circulation(r basics.Round) (basics.MicroAlgos, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -354,6 +370,10 @@ func (l *testLedger) Circulation(r basics.Round) (basics.MicroAlgos, error) {
 		}
 	}
 	return sum, nil
+}
+
+func (l *testLedger) RewardsLevel(basics.Round) (uint64, error) {
+	return 0, nil
 }
 
 func (l *testLedger) EnsureValidatedBlock(e ValidatedBlock, c Certificate) {

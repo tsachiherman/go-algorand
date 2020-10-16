@@ -177,6 +177,21 @@ func (l *testLedger) notify(r basics.Round) {
 	l.notifications[r] = l.notifications[r].fire()
 }
 
+func (l *testLedger) RewardsLevel(basics.Round) (uint64, error) {
+	return 0, nil
+}
+
+func (l *testLedger) LookupWithoutRewards(r basics.Round, a basics.Address) (basics.AccountData, basics.Round, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if r >= l.nextRound {
+		err := fmt.Errorf("Lookup called on future round: %v > %v! (this is probably a bug)", r, l.nextRound)
+		panic(err)
+	}
+	return l.state[a], r, nil
+}
+
 func (l *testLedger) Seed(r basics.Round) (committee.Seed, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -137,6 +137,18 @@ type LedgerReader interface {
 	// protocol may lose liveness.
 	Lookup(basics.Round, basics.Address) (basics.AccountData, error)
 
+	// LookupWithoutRewards returns the AccountData associated with some
+	// Address at the conclusion of a given round without applying
+	// the rewards to that account data. The function also returns
+	// the last round at which the account data would remain the
+	// same beyond the requested round number.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	LookupWithoutRewards(basics.Round, basics.Address) (basics.AccountData, basics.Round, error)
+
 	// Circulation returns the total amount of money in circulation at the
 	// conclusion of a given round.
 	//
@@ -145,6 +157,15 @@ type LedgerReader interface {
 	// unavailable by the storage device. In that case, the agreement
 	// protocol may lose liveness.
 	Circulation(basics.Round) (basics.MicroAlgos, error)
+
+	// RewardsLevel returns the rewards level agreed upon when the given
+	// Round was added to the ledger.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	RewardsLevel(basics.Round) (uint64, error)
 
 	// LookupDigest returns the Digest of the entry that was agreed on in a
 	// given round.

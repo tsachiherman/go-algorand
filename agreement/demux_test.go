@@ -487,6 +487,18 @@ func (t *demuxTester) Lookup(basics.Round, basics.Address) (basics.AccountData, 
 }
 
 // implement Ledger
+func (t *demuxTester) LookupWithoutRewards(basics.Round, basics.Address) (basics.AccountData, basics.Round, error) {
+	// we don't care about this function in this test.
+	return basics.AccountData{}, 0, nil
+}
+
+// implement Ledger
+func (t *demuxTester) RewardsLevel(basics.Round) (uint64, error) {
+	// we don't care about this function in this test.
+	return 0, nil
+}
+
+// implement Ledger
 func (t *demuxTester) Circulation(basics.Round) (basics.MicroAlgos, error) {
 	// we don't care about this function in this test.
 	return basics.MicroAlgos{}, nil
@@ -646,7 +658,7 @@ func (t *demuxTester) TestUsecase(testcase demuxTestUsecase) bool {
 	dmx := &demux{}
 
 	dmx.crypto = t
-	dmx.ledger = t
+	dmx.accountTracker = makeAccountTracker(t, serviceLogger{logging.Base()})
 	dmx.rawVotes = t.makeRawChannel(protocol.AgreementVoteTag, testcase.rawVotes, false)
 	dmx.rawProposals = t.makeRawChannel(protocol.ProposalPayloadTag, testcase.rawProposals, testcase.compoundProposals)
 	dmx.rawBundles = t.makeRawChannel(protocol.VoteBundleTag, testcase.rawBundles, false)

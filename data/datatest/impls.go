@@ -106,9 +106,19 @@ func (i ledgerImpl) Lookup(r basics.Round, addr basics.Address) (basics.AccountD
 	return i.l.Lookup(r, addr)
 }
 
+// LookupWithoutRewards implements Ledger.LookupWithoutRewards.
+func (i ledgerImpl) LookupWithoutRewards(r basics.Round, addr basics.Address) (basics.AccountData, basics.Round, error) {
+	return i.l.LookupWithoutRewards(r, addr)
+}
+
 // Circulation implements Ledger.Circulation.
 func (i ledgerImpl) Circulation(r basics.Round) (basics.MicroAlgos, error) {
 	return i.l.Circulation(r)
+}
+
+// RewardsLevel implements Ledger.RewardsLevel.
+func (i ledgerImpl) RewardsLevel(r basics.Round) (uint64, error) {
+	return i.l.RewardsLevel(r)
 }
 
 // Wait implements Ledger.Wait.
