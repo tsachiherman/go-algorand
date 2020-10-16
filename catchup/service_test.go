@@ -560,8 +560,14 @@ func (m *mockedLedger) Block(r basics.Round) (bookkeeping.Block, error) {
 func (m *mockedLedger) Lookup(basics.Round, basics.Address) (basics.AccountData, error) {
 	return basics.AccountData{}, errors.New("not needed for mockedLedger")
 }
+func (m *mockedLedger) LookupWithoutRewards(basics.Round, basics.Address) (basics.AccountData, basics.Round, error) {
+	return basics.AccountData{}, basics.Round(0), errors.New("not needed for mockedLedger")
+}
 func (m *mockedLedger) Circulation(basics.Round) (basics.MicroAlgos, error) {
 	return basics.MicroAlgos{}, errors.New("not needed for mockedLedger")
+}
+func (m *mockedLedger) RewardsLevel(basics.Round) (uint64, error) {
+	return 0, errors.New("not needed for mockedLedger")
 }
 func (m *mockedLedger) ConsensusVersion(basics.Round) (protocol.ConsensusVersion, error) {
 	return protocol.ConsensusCurrentVersion, nil

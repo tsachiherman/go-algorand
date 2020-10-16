@@ -237,6 +237,21 @@ func (l *testLedger) Lookup(r basics.Round, a basics.Address) (basics.AccountDat
 	return l.state[a], nil
 }
 
+func (l *testLedger) RewardsLevel(basics.Round) (uint64, error) {
+	return 0, nil
+}
+
+func (l *testLedger) LookupWithoutRewards(r basics.Round, a basics.Address) (basics.AccountData, basics.Round, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if r >= l.nextRound {
+		err := fmt.Errorf("LookupWithoutRewards called on future round: %d >= %d! (this is probably a bug)", r, l.nextRound)
+		panic(err)
+	}
+	return l.state[a], r, nil
+}
+
 func (l *testLedger) Circulation(r basics.Round) (basics.MicroAlgos, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
