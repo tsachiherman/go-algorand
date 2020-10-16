@@ -111,6 +111,7 @@ func (at *accountTracker) ConsensusVersion(rnd basics.Round) (protocol.Consensus
 	return at.ledger.ConsensusVersion(rnd)
 }
 
+//msgp:ignore accountData
 type accountData struct {
 	// the AccountData contained here is the account data without rewards
 	basics.AccountData
