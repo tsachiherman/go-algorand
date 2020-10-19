@@ -127,7 +127,7 @@ func (i seedInput) ToBeHashed() (protocol.HashID, []byte) {
 	return protocol.ProposerSeed, protocol.Encode(&i)
 }
 
-func deriveNewSeed(address basics.Address, vrf *crypto.VRFSecrets, rnd round, period period, ledger LedgerReader) (newSeed committee.Seed, seedProof crypto.VRFProof, reterr error) {
+func deriveNewSeed(address basics.Address, vrf *crypto.VRFSecrets, rnd round, period period, ledger LedgerAccountReader) (newSeed committee.Seed, seedProof crypto.VRFProof, reterr error) {
 	var ok bool
 	var vrfOut crypto.VrfOutput
 
@@ -175,7 +175,7 @@ func deriveNewSeed(address basics.Address, vrf *crypto.VRFSecrets, rnd round, pe
 	return
 }
 
-func verifyNewSeed(p unauthenticatedProposal, ledger LedgerReader) error {
+func verifyNewSeed(p unauthenticatedProposal, ledger LedgerAccountReader) error {
 	value := p.value()
 	rnd := p.Round()
 	cparams, err := ledger.ConsensusParams(ParamsRound(rnd))
@@ -230,7 +230,7 @@ func verifyNewSeed(p unauthenticatedProposal, ledger LedgerReader) error {
 	return nil
 }
 
-func proposalForBlock(address basics.Address, vrf *crypto.VRFSecrets, ve ValidatedBlock, period period, ledger LedgerReader) (proposal, proposalValue, error) {
+func proposalForBlock(address basics.Address, vrf *crypto.VRFSecrets, ve ValidatedBlock, period period, ledger LedgerAccountReader) (proposal, proposalValue, error) {
 	rnd := ve.Block().Round()
 	newSeed, seedProof, err := deriveNewSeed(address, vrf, rnd, period, ledger)
 	if err != nil {
@@ -250,7 +250,7 @@ func proposalForBlock(address basics.Address, vrf *crypto.VRFSecrets, ve Validat
 
 // validate returns true if the proposal is valid.
 // It checks the proposal seed and then calls validator.Validate.
-func (p unauthenticatedProposal) validate(ctx context.Context, current round, ledger LedgerReader, validator BlockValidator) (proposal, error) {
+func (p unauthenticatedProposal) validate(ctx context.Context, current round, ledger LedgerAccountReader, validator BlockValidator) (proposal, error) {
 	var invalid proposal
 	entry := p.Block
 

@@ -79,32 +79,32 @@ type (
 	}
 
 	cryptoVoteRequest struct {
-		message                   // the message we would like to verify.
-		TaskIndex int             // Caller specific number that would be passed back in the asyncVerifyVoteResponse.TaskIndex field
-		Round     round           // The round that we're going to test against.
-		Period    period          // The period associated with the message we're going to test.
-		Ledger    LedgerReader    // The ledger that is going to be used to retrieve the account data
-		ctx       context.Context // A context for this request, if the context is cancelled then the request is stale.
+		message                       // the message we would like to verify.
+		TaskIndex int                 // Caller specific number that would be passed back in the asyncVerifyVoteResponse.TaskIndex field
+		Round     round               // The round that we're going to test against.
+		Period    period              // The period associated with the message we're going to test.
+		Ledger    LedgerAccountReader // The ledger that is going to be used to retrieve the account data
+		ctx       context.Context     // A context for this request, if the context is cancelled then the request is stale.
 	}
 
 	cryptoProposalRequest struct {
-		message                   // the message we would like to verify.
-		TaskIndex int             // Caller specific number that would be passed back in the cryptoResult.TaskIndex field
-		Round     round           // The round that we're going to test against.
-		Period    period          // The period associated with the message we're going to test.
-		Pinned    bool            // A flag that is set if this is a pinned value for the given round.
-		Ledger    LedgerReader    // The ledger that is going to be used to retrieve the account data
-		ctx       context.Context // A context for this request, if the context is cancelled then the request is stale.
+		message                       // the message we would like to verify.
+		TaskIndex int                 // Caller specific number that would be passed back in the cryptoResult.TaskIndex field
+		Round     round               // The round that we're going to test against.
+		Period    period              // The period associated with the message we're going to test.
+		Pinned    bool                // A flag that is set if this is a pinned value for the given round.
+		Ledger    LedgerAccountReader // The ledger that is going to be used to retrieve the account data
+		ctx       context.Context     // A context for this request, if the context is cancelled then the request is stale.
 	}
 
 	cryptoBundleRequest struct {
-		message                   // the message we would like to verify.
-		TaskIndex int             // Caller specific number that would be passed back in the asyncVerifyVoteResponse.TaskIndex field
-		Round     round           // The round that we're going to test against.
-		Period    period          // The period associated with the message we're going to test.
-		Certify   bool            // A flag that set if this is a cert bundle.
-		Ledger    LedgerReader    // The ledger that is going to be used to retrieve the account data
-		ctx       context.Context // A context for this request, if the context is cancelled then the request is stale.
+		message                       // the message we would like to verify.
+		TaskIndex int                 // Caller specific number that would be passed back in the asyncVerifyVoteResponse.TaskIndex field
+		Round     round               // The round that we're going to test against.
+		Period    period              // The period associated with the message we're going to test.
+		Certify   bool                // A flag that set if this is a cert bundle.
+		Ledger    LedgerAccountReader // The ledger that is going to be used to retrieve the account data
+		ctx       context.Context     // A context for this request, if the context is cancelled then the request is stale.
 	}
 
 	cryptoResult struct {

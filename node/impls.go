@@ -80,8 +80,8 @@ func makeAgreementLedger(ledger *data.Ledger, net network.GossipNode) agreementL
 }
 
 // EnsureBlock implements agreement.LedgerWriter.EnsureBlock.
-func (l agreementLedger) EnsureBlock(e bookkeeping.Block, c agreement.Certificate) {
-	l.Ledger.EnsureBlock(&e, c)
+func (l agreementLedger) EnsureBlock(e *bookkeeping.Block, c agreement.Certificate) {
+	l.Ledger.EnsureBlock(e, c)
 	// let the network know that we've made some progress.
 	l.n.OnNetworkAdvance()
 }

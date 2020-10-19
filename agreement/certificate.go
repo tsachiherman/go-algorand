@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/algorand/go-algorand/data/bookkeeping"
+	"github.com/algorand/go-algorand/logging"
 )
 
 // A Certificate contains a cryptographic proof that agreement was reached on a
@@ -36,7 +37,7 @@ type Certificate unauthenticatedBundle
 //
 // Callers may want to cache the result of this check, as it is relatively
 // expensive.
-func (c Certificate) Authenticate(e bookkeeping.Block, l LedgerReader, avv *AsyncVoteVerifier) (err error) {
+func (c Certificate) Authenticate(e bookkeeping.Block, l Ledger, avv *AsyncVoteVerifier, log logging.Logger) (err error) {
 	if c.Step != cert {
 		return fmt.Errorf("certificate step is %v != Cert", c.Step)
 	}
@@ -44,7 +45,8 @@ func (c Certificate) Authenticate(e bookkeeping.Block, l LedgerReader, avv *Asyn
 	if err != nil {
 		return
 	}
-	_, err = unauthenticatedBundle(c).verify(context.Background(), l, avv)
+	accountTracker := makeAccountTracker(l, serviceLogger{Logger: log})
+	_, err = unauthenticatedBundle(c).verify(context.Background(), accountTracker, avv)
 	return
 }
 

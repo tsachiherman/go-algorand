@@ -56,7 +56,7 @@ func seedRound(r basics.Round, cparams config.ConsensusParams) basics.Round {
 }
 
 // a helper function for obtaining memberhship verification parameters.
-func membership(l LedgerReader, addr basics.Address, r basics.Round, p period, s step) (m committee.Membership, err error) {
+func membership(l LedgerAccountReader, addr basics.Address, r basics.Round, p period, s step) (m committee.Membership, err error) {
 	cparams, err := l.ConsensusParams(ParamsRound(r))
 	if err != nil {
 		return

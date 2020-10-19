@@ -246,7 +246,7 @@ func (a ensureAction) do(ctx context.Context, s *Service) {
 			Hash:    a.Certificate.Proposal.BlockDigest.String(),
 			Round:   uint64(a.Certificate.Round),
 		})
-		s.Ledger.EnsureBlock(block, a.Certificate)
+		s.Ledger.EnsureBlock(&block, a.Certificate)
 	}
 	logEventStart := logEvent
 	logEventStart.Type = logspec.RoundStart

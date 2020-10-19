@@ -42,6 +42,76 @@ type accountTracker struct {
 	baseRound     basics.Round
 }
 
+// LedgerAccountReader is used as the internal LedgerReader interface; it allows the interface implementor
+// to provide a caching around the accounts as well as the rest of the parameters.
+type LedgerAccountReader interface {
+	// Seed returns the VRF seed that was agreed upon in a given round.
+	//
+	// The Seed is a source of cryptographic entropy which has bounded
+	// bias. It is used to select committees for participation in
+	// sortition.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	Seed(basics.Round) (committee.Seed, error)
+
+	// Lookup returns the AccountData associated with some Address
+	// at the conclusion of a given round.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	Lookup(basics.Round, basics.Address) (basics.AccountData, error)
+
+	// Circulation returns the total amount of money in circulation at the
+	// conclusion of a given round.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	Circulation(basics.Round) (basics.MicroAlgos, error)
+
+	// RewardsLevel returns the rewards level agreed upon when the given
+	// Round was added to the ledger.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	RewardsLevel(basics.Round) (uint64, error)
+
+	// LookupDigest returns the Digest of the entry that was agreed on in a
+	// given round.
+	//
+	// Recent Entry Digests are periodically used when computing the Seed.
+	// This prevents some subtle attacks.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	//
+	// A LedgerReader need only keep track of the digest from the most
+	// recent multiple of (config.Protocol.BalLookback/2). All other
+	// digests may be forgotten without hurting liveness.
+	LookupDigest(basics.Round) (crypto.Digest, error)
+
+	// ConsensusParams returns the consensus parameters that are correct
+	// for the given round.
+	//
+	// This method returns an error if the given Round has not yet been
+	// confirmed. It may also return an error if the given Round is
+	// unavailable by the storage device. In that case, the agreement
+	// protocol may lose liveness.
+	//
+	// TODO replace with ConsensusVersion
+	ConsensusParams(basics.Round) (config.ConsensusParams, error)
+}
+
 func makeAccountTracker(ledger LedgerReader, log serviceLogger) *accountTracker {
 	return &accountTracker{
 		ledger:        ledger,
@@ -51,7 +121,7 @@ func makeAccountTracker(ledger LedgerReader, log serviceLogger) *accountTracker 
 	}
 }
 
-func (at *accountTracker) getRoundAccountTracker(rnd basics.Round) LedgerReader {
+func (at *accountTracker) getRoundAccountTracker(rnd basics.Round) LedgerAccountReader {
 	// see if we have an account tracker for the requested round
 	if rnd >= at.baseRound && rnd < at.baseRound+basics.Round(len(at.roundTrackers)) {
 		// we do, return it.
@@ -60,7 +130,7 @@ func (at *accountTracker) getRoundAccountTracker(rnd basics.Round) LedgerReader 
 	// we shouldn't get a request for rnd=0, so we will default to the upstream ledger.
 	// if we get a request of a round before baseRound, we also default to the upstream ledger.
 	if rnd == 0 || rnd < at.baseRound {
-		return at.ledger
+		return at
 	}
 
 	// ensure linearity - the roundTrackers need to contain all the rounds starting the base round.
@@ -69,7 +139,7 @@ func (at *accountTracker) getRoundAccountTracker(rnd basics.Round) LedgerReader 
 			// reset the entire cache pipeline. this is not expected to happen.
 			at.roundTrackers = at.roundTrackers[:0]
 			at.log.Warnf("accountTracker unable to create account tracker for round %d : %v", rnd, err)
-			return at.ledger
+			return at
 		}
 	}
 
@@ -106,9 +176,69 @@ func (at *accountTracker) newRound(rnd basics.Round) error {
 	return nil
 }
 
-// ConsensusVersion returns the consensus version that is correct for the given round.
+// NextRound returns the first round for which no Block has been
+// confirmed.
+func (at *accountTracker) NextRound() basics.Round {
+	return at.ledger.NextRound()
+}
+
+// Wait returns a channel which fires when the specified round
+// completes and is durably stored on disk.
+func (at *accountTracker) Wait(rnd basics.Round) chan struct{} {
+	return at.ledger.Wait(rnd)
+}
+
+// Seed returns the VRF seed that was agreed upon in a given round.
+func (at *accountTracker) Seed(rnd basics.Round) (committee.Seed, error) {
+	return at.ledger.Seed(rnd)
+}
+
+// Lookup returns the AccountData associated with some Address
+// at the conclusion of a given round.
+func (at *accountTracker) Lookup(rnd basics.Round, addr basics.Address) (basics.AccountData, error) {
+	acctData, _, err := at.ledger.LookupWithoutRewards(rnd, addr)
+	if err != nil {
+		return acctData, err
+	}
+	cparams, err := at.ledger.ConsensusParams(rnd)
+	if err != nil {
+		return acctData, err
+	}
+	rewardsLevel, err := at.ledger.RewardsLevel(rnd)
+	if err != nil {
+		return acctData, err
+	}
+	return acctData.WithUpdatedRewards(cparams, rewardsLevel), nil
+}
+
+// Circulation returns the total amount of money in circulation at the
+// conclusion of a given round.
+func (at *accountTracker) Circulation(rnd basics.Round) (basics.MicroAlgos, error) {
+	return at.ledger.Circulation(rnd)
+}
+
+// LookupDigest returns the Digest of the entry that was agreed on in a
+// given round.
+func (at *accountTracker) LookupDigest(rnd basics.Round) (crypto.Digest, error) {
+	return at.ledger.LookupDigest(rnd)
+}
+
+// ConsensusParams returns the consensus parameters that are correct
+// for the given round.
+func (at *accountTracker) ConsensusParams(rnd basics.Round) (config.ConsensusParams, error) {
+	return at.ledger.ConsensusParams(rnd)
+}
+
+// ConsensusVersion returns the consensus version that is correct
+// for the given round.
 func (at *accountTracker) ConsensusVersion(rnd basics.Round) (protocol.ConsensusVersion, error) {
 	return at.ledger.ConsensusVersion(rnd)
+}
+
+// RewardsLevel returns the rewards level agreed upon when the given
+// Round was added to the ledger.
+func (at *accountTracker) RewardsLevel(rnd basics.Round) (uint64, error) {
+	return at.ledger.RewardsLevel(rnd)
 }
 
 //msgp:ignore accountData
@@ -260,7 +390,7 @@ func (rt *roundAccountTracker) Lookup(rnd basics.Round, addr basics.Address) (ba
 		rt.newAccountsLock.Unlock()
 		return acctData.WithUpdatedRewards(rt.balanceConsensusParams, rt.balanceRewardsLevel), nil
 	}
-	return rt.accountTracker.ledger.Lookup(rnd, addr)
+	return rt.accountTracker.Lookup(rnd, addr)
 }
 
 // Circulation returns the total amount of money in circulation at the
@@ -297,13 +427,4 @@ func (rt *roundAccountTracker) ConsensusVersion(rnd basics.Round) (protocol.Cons
 // Round was added to the ledger.
 func (rt *roundAccountTracker) RewardsLevel(rnd basics.Round) (uint64, error) {
 	return rt.accountTracker.ledger.RewardsLevel(rnd)
-}
-
-// LookupWithoutRewards returns the AccountData associated with some
-// Address at the conclusion of a given round without applying
-// the rewards to that account data. The function also returns
-// the last round at which the account data would remain the
-// same beyond the requested round number.
-func (rt *roundAccountTracker) LookupWithoutRewards(rnd basics.Round, addr basics.Address) (basics.AccountData, basics.Round, error) {
-	return rt.accountTracker.ledger.LookupWithoutRewards(rnd, addr)
 }

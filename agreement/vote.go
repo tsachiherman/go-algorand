@@ -86,7 +86,7 @@ type (
 )
 
 // verify verifies that a vote that was received from the network is valid.
-func (uv unauthenticatedVote) verify(l LedgerReader) (vote, error) {
+func (uv unauthenticatedVote) verify(l LedgerAccountReader) (vote, error) {
 	rv := uv.R
 	m, err := membership(l, rv.Sender, rv.Round, rv.Period, rv.Step)
 	if err != nil {
@@ -141,7 +141,7 @@ func (uv unauthenticatedVote) verify(l LedgerReader) (vote, error) {
 // makeVote creates a new unauthenticated vote from its constituent components.
 //
 // makeVote returns an error it it fails.
-func makeVote(rv rawVote, voting crypto.OneTimeSigner, selection *crypto.VRFSecrets, l LedgerReader) (unauthenticatedVote, error) {
+func makeVote(rv rawVote, voting crypto.OneTimeSigner, selection *crypto.VRFSecrets, l LedgerAccountReader) (unauthenticatedVote, error) {
 	m, err := membership(l, rv.Sender, rv.Round, rv.Period, rv.Step)
 	if err != nil {
 		return unauthenticatedVote{}, fmt.Errorf("makeVote: could not get membership parameters: %v", err)
@@ -191,7 +191,7 @@ func (v vote) u() unauthenticatedVote {
 	return unauthenticatedVote{R: v.R, Cred: v.Cred.UnauthenticatedCredential, Sig: v.Sig}
 }
 
-func (pair unauthenticatedEquivocationVote) verify(l LedgerReader) (equivocationVote, error) {
+func (pair unauthenticatedEquivocationVote) verify(l LedgerAccountReader) (equivocationVote, error) {
 	if pair.Proposals[0] == pair.Proposals[1] {
 		return equivocationVote{}, fmt.Errorf("isEquivocationPair: not an equivocation pair: identical vote (block hash %v == %v)", pair.Proposals[0], pair.Proposals[1])
 	}

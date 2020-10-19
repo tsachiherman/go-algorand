@@ -128,15 +128,6 @@ type LedgerReader interface {
 	// protocol may lose liveness.
 	Seed(basics.Round) (committee.Seed, error)
 
-	// Lookup returns the AccountData associated with some Address
-	// at the conclusion of a given round.
-	//
-	// This method returns an error if the given Round has not yet been
-	// confirmed. It may also return an error if the given Round is
-	// unavailable by the storage device. In that case, the agreement
-	// protocol may lose liveness.
-	Lookup(basics.Round, basics.Address) (basics.AccountData, error)
-
 	// LookupWithoutRewards returns the AccountData associated with some
 	// Address at the conclusion of a given round without applying
 	// the rewards to that account data. The function also returns
@@ -220,7 +211,7 @@ type LedgerWriter interface {
 	//
 	// EnsureBlock does not wait until the block is written to disk; use
 	// Wait() for that.
-	EnsureBlock(bookkeeping.Block, Certificate)
+	EnsureBlock(*bookkeeping.Block, Certificate)
 
 	// EnsureValidatedBlock is an optimized version of EnsureBlock that
 	// works on a ValidatedBlock, but otherwise has the same semantics

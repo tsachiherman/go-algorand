@@ -51,6 +51,7 @@ type Service struct {
 
 	voteVerifier    *AsyncVoteVerifier
 	persistenceLoop *asyncPersistenceLoop
+	accountTracker  *accountTracker
 
 	monitor *coserviceMonitor
 
@@ -121,11 +122,11 @@ func (s *Service) Start() {
 
 	s.voteVerifier = MakeAsyncVoteVerifier(s.BacklogPool)
 
-	accountTracker := makeAccountTracker(s.Ledger, s.log)
+	s.accountTracker = makeAccountTracker(s.Ledger, s.log)
 
 	s.demux = makeDemux(demuxParams{
 		net:               s.Network,
-		accountTracker:    accountTracker,
+		accountTracker:    s.accountTracker,
 		validator:         s.BlockValidator,
 		voteVerifier:      s.voteVerifier,
 		processingMonitor: s.EventsProcessingMonitor,
@@ -137,7 +138,7 @@ func (s *Service) Start() {
 		factory:        s.BlockFactory,
 		validator:      s.BlockValidator,
 		keys:           s.KeyManager,
-		accountTracker: accountTracker,
+		accountTracker: s.accountTracker,
 		voteVerifier:   s.voteVerifier,
 		log:            s.log,
 		monitor:        s.monitor,

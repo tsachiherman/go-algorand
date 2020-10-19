@@ -92,7 +92,7 @@ type pseudonodeBaseTask struct {
 	node          *asyncPseudonode
 	context       context.Context // the context associated with that task; context might expire for a single task but remain valid for others.
 	out           chan externalEvent
-	ledger        LedgerReader
+	ledger        LedgerAccountReader
 	participation []account.Participation
 }
 
@@ -265,7 +265,7 @@ func (n asyncPseudonode) getParticipations(procName string, round basics.Round) 
 }
 
 // makeProposals creates a slice of block proposals for the given round and period.
-func (n asyncPseudonode) makeProposals(roundLedger LedgerReader, round basics.Round, period period, accounts []account.Participation) ([]proposal, []unauthenticatedVote) {
+func (n asyncPseudonode) makeProposals(roundLedger LedgerAccountReader, round basics.Round, period period, accounts []account.Participation) ([]proposal, []unauthenticatedVote) {
 	deadline := time.Now().Add(AssemblyTime)
 	ve, err := n.factory.AssembleBlock(round, deadline)
 	if err != nil {
@@ -302,7 +302,7 @@ func (n asyncPseudonode) makeProposals(roundLedger LedgerReader, round basics.Ro
 
 // makeVotes creates a slice of votes for a given proposal value in a given
 // round, period, and step.
-func (n asyncPseudonode) makeVotes(roundLedger LedgerReader, round basics.Round, period period, step step, proposal proposalValue, participation []account.Participation) []unauthenticatedVote {
+func (n asyncPseudonode) makeVotes(roundLedger LedgerAccountReader, round basics.Round, period period, step step, proposal proposalValue, participation []account.Participation) []unauthenticatedVote {
 	votes := make([]unauthenticatedVote, 0)
 	for _, account := range participation {
 		rv := rawVote{Sender: account.Address(), Round: round, Period: period, Step: step, Proposal: proposal}
