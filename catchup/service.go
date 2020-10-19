@@ -560,7 +560,7 @@ func (s *Service) fetchRound(cert agreement.Certificate, verifier *agreement.Asy
 		// As a failsafe, if the cert we fetched is valid but for the wrong block, panic as loudly as possible
 		if cert.Round == fetchedCert.Round &&
 			cert.Proposal.BlockDigest != fetchedCert.Proposal.BlockDigest &&
-			fetchedCert.Authenticate(*block, s.ledger, verifier) == nil {
+			fetchedCert.Authenticate(*block, s.ledger, verifier, logging.Base()) == nil {
 			s := "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
 			s += "!!!!!!!!!! FORK DETECTED !!!!!!!!!!!\n"
 			s += "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
