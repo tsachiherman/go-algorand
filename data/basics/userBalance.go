@@ -231,6 +231,42 @@ type StateSchemas struct {
 	GlobalStateSchema StateSchema `codec:"gsch"`
 }
 
+// AssetsHoldingGroup ...
+type AssetsHoldingGroup struct {
+	_struct struct{} `codec:",omitempty,omitemptyarray"`
+
+	Count               uint32     `codec:"c"` // how many assets in this group
+	MinAssetIndex       AssetIndex `codec:"min"`
+	MaxAssetIndexOffset AssetIndex `codec:"dmax"` // The offset is relative to MinAssetIndex
+	AssetGroupIndex     uint64     `codec:"gid"`  // a forign key to the XXX table
+}
+
+// ExtendedAssetHoldings ...
+type ExtendedAssetHoldings struct {
+	_struct struct{} `codec:",omitempty,omitemptyarray"`
+
+	Count  uint32               `codec:"c"`
+	Groups []AssetsHoldingGroup `codec:"gs,allocbound=1024"`
+}
+
+// create another table:
+//
+// assetholdingsgroups
+//    groupindex integer PK
+//    data blob
+//
+
+// the blob data would be decoded into the following:
+
+// AssetsHoldingGroupData ...
+type AssetsHoldingGroupData struct {
+	_struct struct{} `codec:",omitempty,omitemptyarray"`
+
+	AmountsAssetIndicesOffsets []AssetIndex `codec:"ai,allocbound=256"` // offset relative to MinAssetIndex and differential afterward.
+	AssetsAmount               []uint64     `codec:"aa,allocbound=256"` // same number of elements as in AmountsAssetIndicesOffsets
+	FrozedAssetIndicesOffsets  []AssetIndex `codec:"fa,allocbound=256"` // offset relative to MinAssetIndex and differential afterward.
+}
+
 // Clone returns a copy of some AppParams that may be modified without
 // affecting the original
 func (ap *AppParams) Clone() (res AppParams) {

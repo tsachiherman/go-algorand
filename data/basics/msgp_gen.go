@@ -75,6 +75,22 @@ import (
 //      |-----> (*) Msgsize
 //      |-----> (*) MsgIsZero
 //
+// AssetsHoldingGroup
+//          |-----> (*) MarshalMsg
+//          |-----> (*) CanMarshalMsg
+//          |-----> (*) UnmarshalMsg
+//          |-----> (*) CanUnmarshalMsg
+//          |-----> (*) Msgsize
+//          |-----> (*) MsgIsZero
+//
+// AssetsHoldingGroupData
+//            |-----> (*) MarshalMsg
+//            |-----> (*) CanMarshalMsg
+//            |-----> (*) UnmarshalMsg
+//            |-----> (*) CanUnmarshalMsg
+//            |-----> (*) Msgsize
+//            |-----> (*) MsgIsZero
+//
 // BalanceRecord
 //       |-----> (*) MarshalMsg
 //       |-----> (*) CanMarshalMsg
@@ -114,6 +130,14 @@ import (
 //     |-----> (*) CanUnmarshalMsg
 //     |-----> (*) Msgsize
 //     |-----> (*) MsgIsZero
+//
+// ExtendedAssetHoldings
+//           |-----> (*) MarshalMsg
+//           |-----> (*) CanMarshalMsg
+//           |-----> (*) UnmarshalMsg
+//           |-----> (*) CanUnmarshalMsg
+//           |-----> (*) Msgsize
+//           |-----> (*) MsgIsZero
 //
 // Round
 //   |-----> MarshalMsg
@@ -2898,6 +2922,512 @@ func (z *AssetParams) MsgIsZero() bool {
 }
 
 // MarshalMsg implements msgp.Marshaler
+func (z *AssetsHoldingGroup) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// omitempty: check for empty values
+	zb0001Len := uint32(4)
+	var zb0001Mask uint8 /* 5 bits */
+	if (*z).Count == 0 {
+		zb0001Len--
+		zb0001Mask |= 0x2
+	}
+	if (*z).MaxAssetIndexOffset == 0 {
+		zb0001Len--
+		zb0001Mask |= 0x4
+	}
+	if (*z).AssetGroupIndex == 0 {
+		zb0001Len--
+		zb0001Mask |= 0x8
+	}
+	if (*z).MinAssetIndex == 0 {
+		zb0001Len--
+		zb0001Mask |= 0x10
+	}
+	// variable map header, size zb0001Len
+	o = append(o, 0x80|uint8(zb0001Len))
+	if zb0001Len != 0 {
+		if (zb0001Mask & 0x2) == 0 { // if not empty
+			// string "c"
+			o = append(o, 0xa1, 0x63)
+			o = msgp.AppendUint32(o, (*z).Count)
+		}
+		if (zb0001Mask & 0x4) == 0 { // if not empty
+			// string "dmax"
+			o = append(o, 0xa4, 0x64, 0x6d, 0x61, 0x78)
+			o = msgp.AppendUint64(o, uint64((*z).MaxAssetIndexOffset))
+		}
+		if (zb0001Mask & 0x8) == 0 { // if not empty
+			// string "gid"
+			o = append(o, 0xa3, 0x67, 0x69, 0x64)
+			o = msgp.AppendUint64(o, (*z).AssetGroupIndex)
+		}
+		if (zb0001Mask & 0x10) == 0 { // if not empty
+			// string "min"
+			o = append(o, 0xa3, 0x6d, 0x69, 0x6e)
+			o = msgp.AppendUint64(o, uint64((*z).MinAssetIndex))
+		}
+	}
+	return
+}
+
+func (_ *AssetsHoldingGroup) CanMarshalMsg(z interface{}) bool {
+	_, ok := (z).(*AssetsHoldingGroup)
+	return ok
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *AssetsHoldingGroup) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var zb0001 int
+	var zb0002 bool
+	zb0001, zb0002, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if _, ok := err.(msgp.TypeError); ok {
+		zb0001, zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		if zb0001 > 0 {
+			zb0001--
+			(*z).Count, bts, err = msgp.ReadUint32Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array", "Count")
+				return
+			}
+		}
+		if zb0001 > 0 {
+			zb0001--
+			{
+				var zb0003 uint64
+				zb0003, bts, err = msgp.ReadUint64Bytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "struct-from-array", "MinAssetIndex")
+					return
+				}
+				(*z).MinAssetIndex = AssetIndex(zb0003)
+			}
+		}
+		if zb0001 > 0 {
+			zb0001--
+			{
+				var zb0004 uint64
+				zb0004, bts, err = msgp.ReadUint64Bytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "struct-from-array", "MaxAssetIndexOffset")
+					return
+				}
+				(*z).MaxAssetIndexOffset = AssetIndex(zb0004)
+			}
+		}
+		if zb0001 > 0 {
+			zb0001--
+			(*z).AssetGroupIndex, bts, err = msgp.ReadUint64Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array", "AssetGroupIndex")
+				return
+			}
+		}
+		if zb0001 > 0 {
+			err = msgp.ErrTooManyArrayFields(zb0001)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array")
+				return
+			}
+		}
+	} else {
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		if zb0002 {
+			(*z) = AssetsHoldingGroup{}
+		}
+		for zb0001 > 0 {
+			zb0001--
+			field, bts, err = msgp.ReadMapKeyZC(bts)
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+			switch string(field) {
+			case "c":
+				(*z).Count, bts, err = msgp.ReadUint32Bytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Count")
+					return
+				}
+			case "min":
+				{
+					var zb0005 uint64
+					zb0005, bts, err = msgp.ReadUint64Bytes(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "MinAssetIndex")
+						return
+					}
+					(*z).MinAssetIndex = AssetIndex(zb0005)
+				}
+			case "dmax":
+				{
+					var zb0006 uint64
+					zb0006, bts, err = msgp.ReadUint64Bytes(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "MaxAssetIndexOffset")
+						return
+					}
+					(*z).MaxAssetIndexOffset = AssetIndex(zb0006)
+				}
+			case "gid":
+				(*z).AssetGroupIndex, bts, err = msgp.ReadUint64Bytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "AssetGroupIndex")
+					return
+				}
+			default:
+				err = msgp.ErrNoField(string(field))
+				if err != nil {
+					err = msgp.WrapError(err)
+					return
+				}
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+func (_ *AssetsHoldingGroup) CanUnmarshalMsg(z interface{}) bool {
+	_, ok := (z).(*AssetsHoldingGroup)
+	return ok
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z *AssetsHoldingGroup) Msgsize() (s int) {
+	s = 1 + 2 + msgp.Uint32Size + 4 + msgp.Uint64Size + 5 + msgp.Uint64Size + 4 + msgp.Uint64Size
+	return
+}
+
+// MsgIsZero returns whether this is a zero value
+func (z *AssetsHoldingGroup) MsgIsZero() bool {
+	return ((*z).Count == 0) && ((*z).MinAssetIndex == 0) && ((*z).MaxAssetIndexOffset == 0) && ((*z).AssetGroupIndex == 0)
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z *AssetsHoldingGroupData) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// omitempty: check for empty values
+	zb0004Len := uint32(3)
+	var zb0004Mask uint8 /* 4 bits */
+	if len((*z).AssetsAmount) == 0 {
+		zb0004Len--
+		zb0004Mask |= 0x2
+	}
+	if len((*z).AmountsAssetIndicesOffsets) == 0 {
+		zb0004Len--
+		zb0004Mask |= 0x4
+	}
+	if len((*z).FrozedAssetIndicesOffsets) == 0 {
+		zb0004Len--
+		zb0004Mask |= 0x8
+	}
+	// variable map header, size zb0004Len
+	o = append(o, 0x80|uint8(zb0004Len))
+	if zb0004Len != 0 {
+		if (zb0004Mask & 0x2) == 0 { // if not empty
+			// string "aa"
+			o = append(o, 0xa2, 0x61, 0x61)
+			if (*z).AssetsAmount == nil {
+				o = msgp.AppendNil(o)
+			} else {
+				o = msgp.AppendArrayHeader(o, uint32(len((*z).AssetsAmount)))
+			}
+			for zb0002 := range (*z).AssetsAmount {
+				o = msgp.AppendUint64(o, (*z).AssetsAmount[zb0002])
+			}
+		}
+		if (zb0004Mask & 0x4) == 0 { // if not empty
+			// string "ai"
+			o = append(o, 0xa2, 0x61, 0x69)
+			if (*z).AmountsAssetIndicesOffsets == nil {
+				o = msgp.AppendNil(o)
+			} else {
+				o = msgp.AppendArrayHeader(o, uint32(len((*z).AmountsAssetIndicesOffsets)))
+			}
+			for zb0001 := range (*z).AmountsAssetIndicesOffsets {
+				o = msgp.AppendUint64(o, uint64((*z).AmountsAssetIndicesOffsets[zb0001]))
+			}
+		}
+		if (zb0004Mask & 0x8) == 0 { // if not empty
+			// string "fa"
+			o = append(o, 0xa2, 0x66, 0x61)
+			if (*z).FrozedAssetIndicesOffsets == nil {
+				o = msgp.AppendNil(o)
+			} else {
+				o = msgp.AppendArrayHeader(o, uint32(len((*z).FrozedAssetIndicesOffsets)))
+			}
+			for zb0003 := range (*z).FrozedAssetIndicesOffsets {
+				o = msgp.AppendUint64(o, uint64((*z).FrozedAssetIndicesOffsets[zb0003]))
+			}
+		}
+	}
+	return
+}
+
+func (_ *AssetsHoldingGroupData) CanMarshalMsg(z interface{}) bool {
+	_, ok := (z).(*AssetsHoldingGroupData)
+	return ok
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *AssetsHoldingGroupData) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var zb0004 int
+	var zb0005 bool
+	zb0004, zb0005, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if _, ok := err.(msgp.TypeError); ok {
+		zb0004, zb0005, bts, err = msgp.ReadArrayHeaderBytes(bts)
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		if zb0004 > 0 {
+			zb0004--
+			var zb0006 int
+			var zb0007 bool
+			zb0006, zb0007, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array", "AmountsAssetIndicesOffsets")
+				return
+			}
+			if zb0006 > 512 {
+				err = msgp.ErrOverflow(uint64(zb0006), uint64(512))
+				err = msgp.WrapError(err, "struct-from-array", "AmountsAssetIndicesOffsets")
+				return
+			}
+			if zb0007 {
+				(*z).AmountsAssetIndicesOffsets = nil
+			} else if (*z).AmountsAssetIndicesOffsets != nil && cap((*z).AmountsAssetIndicesOffsets) >= zb0006 {
+				(*z).AmountsAssetIndicesOffsets = ((*z).AmountsAssetIndicesOffsets)[:zb0006]
+			} else {
+				(*z).AmountsAssetIndicesOffsets = make([]AssetIndex, zb0006)
+			}
+			for zb0001 := range (*z).AmountsAssetIndicesOffsets {
+				{
+					var zb0008 uint64
+					zb0008, bts, err = msgp.ReadUint64Bytes(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "struct-from-array", "AmountsAssetIndicesOffsets", zb0001)
+						return
+					}
+					(*z).AmountsAssetIndicesOffsets[zb0001] = AssetIndex(zb0008)
+				}
+			}
+		}
+		if zb0004 > 0 {
+			zb0004--
+			var zb0009 int
+			var zb0010 bool
+			zb0009, zb0010, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array", "AssetsAmount")
+				return
+			}
+			if zb0009 > 512 {
+				err = msgp.ErrOverflow(uint64(zb0009), uint64(512))
+				err = msgp.WrapError(err, "struct-from-array", "AssetsAmount")
+				return
+			}
+			if zb0010 {
+				(*z).AssetsAmount = nil
+			} else if (*z).AssetsAmount != nil && cap((*z).AssetsAmount) >= zb0009 {
+				(*z).AssetsAmount = ((*z).AssetsAmount)[:zb0009]
+			} else {
+				(*z).AssetsAmount = make([]uint64, zb0009)
+			}
+			for zb0002 := range (*z).AssetsAmount {
+				(*z).AssetsAmount[zb0002], bts, err = msgp.ReadUint64Bytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "struct-from-array", "AssetsAmount", zb0002)
+					return
+				}
+			}
+		}
+		if zb0004 > 0 {
+			zb0004--
+			var zb0011 int
+			var zb0012 bool
+			zb0011, zb0012, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array", "FrozedAssetIndicesOffsets")
+				return
+			}
+			if zb0011 > 512 {
+				err = msgp.ErrOverflow(uint64(zb0011), uint64(512))
+				err = msgp.WrapError(err, "struct-from-array", "FrozedAssetIndicesOffsets")
+				return
+			}
+			if zb0012 {
+				(*z).FrozedAssetIndicesOffsets = nil
+			} else if (*z).FrozedAssetIndicesOffsets != nil && cap((*z).FrozedAssetIndicesOffsets) >= zb0011 {
+				(*z).FrozedAssetIndicesOffsets = ((*z).FrozedAssetIndicesOffsets)[:zb0011]
+			} else {
+				(*z).FrozedAssetIndicesOffsets = make([]AssetIndex, zb0011)
+			}
+			for zb0003 := range (*z).FrozedAssetIndicesOffsets {
+				{
+					var zb0013 uint64
+					zb0013, bts, err = msgp.ReadUint64Bytes(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "struct-from-array", "FrozedAssetIndicesOffsets", zb0003)
+						return
+					}
+					(*z).FrozedAssetIndicesOffsets[zb0003] = AssetIndex(zb0013)
+				}
+			}
+		}
+		if zb0004 > 0 {
+			err = msgp.ErrTooManyArrayFields(zb0004)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array")
+				return
+			}
+		}
+	} else {
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		if zb0005 {
+			(*z) = AssetsHoldingGroupData{}
+		}
+		for zb0004 > 0 {
+			zb0004--
+			field, bts, err = msgp.ReadMapKeyZC(bts)
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+			switch string(field) {
+			case "ai":
+				var zb0014 int
+				var zb0015 bool
+				zb0014, zb0015, bts, err = msgp.ReadArrayHeaderBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "AmountsAssetIndicesOffsets")
+					return
+				}
+				if zb0014 > 512 {
+					err = msgp.ErrOverflow(uint64(zb0014), uint64(512))
+					err = msgp.WrapError(err, "AmountsAssetIndicesOffsets")
+					return
+				}
+				if zb0015 {
+					(*z).AmountsAssetIndicesOffsets = nil
+				} else if (*z).AmountsAssetIndicesOffsets != nil && cap((*z).AmountsAssetIndicesOffsets) >= zb0014 {
+					(*z).AmountsAssetIndicesOffsets = ((*z).AmountsAssetIndicesOffsets)[:zb0014]
+				} else {
+					(*z).AmountsAssetIndicesOffsets = make([]AssetIndex, zb0014)
+				}
+				for zb0001 := range (*z).AmountsAssetIndicesOffsets {
+					{
+						var zb0016 uint64
+						zb0016, bts, err = msgp.ReadUint64Bytes(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "AmountsAssetIndicesOffsets", zb0001)
+							return
+						}
+						(*z).AmountsAssetIndicesOffsets[zb0001] = AssetIndex(zb0016)
+					}
+				}
+			case "aa":
+				var zb0017 int
+				var zb0018 bool
+				zb0017, zb0018, bts, err = msgp.ReadArrayHeaderBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "AssetsAmount")
+					return
+				}
+				if zb0017 > 512 {
+					err = msgp.ErrOverflow(uint64(zb0017), uint64(512))
+					err = msgp.WrapError(err, "AssetsAmount")
+					return
+				}
+				if zb0018 {
+					(*z).AssetsAmount = nil
+				} else if (*z).AssetsAmount != nil && cap((*z).AssetsAmount) >= zb0017 {
+					(*z).AssetsAmount = ((*z).AssetsAmount)[:zb0017]
+				} else {
+					(*z).AssetsAmount = make([]uint64, zb0017)
+				}
+				for zb0002 := range (*z).AssetsAmount {
+					(*z).AssetsAmount[zb0002], bts, err = msgp.ReadUint64Bytes(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "AssetsAmount", zb0002)
+						return
+					}
+				}
+			case "fa":
+				var zb0019 int
+				var zb0020 bool
+				zb0019, zb0020, bts, err = msgp.ReadArrayHeaderBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "FrozedAssetIndicesOffsets")
+					return
+				}
+				if zb0019 > 512 {
+					err = msgp.ErrOverflow(uint64(zb0019), uint64(512))
+					err = msgp.WrapError(err, "FrozedAssetIndicesOffsets")
+					return
+				}
+				if zb0020 {
+					(*z).FrozedAssetIndicesOffsets = nil
+				} else if (*z).FrozedAssetIndicesOffsets != nil && cap((*z).FrozedAssetIndicesOffsets) >= zb0019 {
+					(*z).FrozedAssetIndicesOffsets = ((*z).FrozedAssetIndicesOffsets)[:zb0019]
+				} else {
+					(*z).FrozedAssetIndicesOffsets = make([]AssetIndex, zb0019)
+				}
+				for zb0003 := range (*z).FrozedAssetIndicesOffsets {
+					{
+						var zb0021 uint64
+						zb0021, bts, err = msgp.ReadUint64Bytes(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "FrozedAssetIndicesOffsets", zb0003)
+							return
+						}
+						(*z).FrozedAssetIndicesOffsets[zb0003] = AssetIndex(zb0021)
+					}
+				}
+			default:
+				err = msgp.ErrNoField(string(field))
+				if err != nil {
+					err = msgp.WrapError(err)
+					return
+				}
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+func (_ *AssetsHoldingGroupData) CanUnmarshalMsg(z interface{}) bool {
+	_, ok := (z).(*AssetsHoldingGroupData)
+	return ok
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z *AssetsHoldingGroupData) Msgsize() (s int) {
+	s = 1 + 3 + msgp.ArrayHeaderSize + (len((*z).AmountsAssetIndicesOffsets) * (msgp.Uint64Size)) + 3 + msgp.ArrayHeaderSize + (len((*z).AssetsAmount) * (msgp.Uint64Size)) + 3 + msgp.ArrayHeaderSize + (len((*z).FrozedAssetIndicesOffsets) * (msgp.Uint64Size))
+	return
+}
+
+// MsgIsZero returns whether this is a zero value
+func (z *AssetsHoldingGroupData) MsgIsZero() bool {
+	return (len((*z).AmountsAssetIndicesOffsets) == 0) && (len((*z).AssetsAmount) == 0) && (len((*z).FrozedAssetIndicesOffsets) == 0)
+}
+
+// MarshalMsg implements msgp.Marshaler
 func (z *BalanceRecord) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// omitempty: check for empty values
@@ -4550,6 +5080,191 @@ func (z *EvalDelta) Msgsize() (s int) {
 // MsgIsZero returns whether this is a zero value
 func (z *EvalDelta) MsgIsZero() bool {
 	return (len((*z).GlobalDelta) == 0) && (len((*z).LocalDeltas) == 0)
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z *ExtendedAssetHoldings) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// omitempty: check for empty values
+	zb0002Len := uint32(2)
+	var zb0002Mask uint8 /* 3 bits */
+	if (*z).Count == 0 {
+		zb0002Len--
+		zb0002Mask |= 0x2
+	}
+	if len((*z).Groups) == 0 {
+		zb0002Len--
+		zb0002Mask |= 0x4
+	}
+	// variable map header, size zb0002Len
+	o = append(o, 0x80|uint8(zb0002Len))
+	if zb0002Len != 0 {
+		if (zb0002Mask & 0x2) == 0 { // if not empty
+			// string "c"
+			o = append(o, 0xa1, 0x63)
+			o = msgp.AppendUint32(o, (*z).Count)
+		}
+		if (zb0002Mask & 0x4) == 0 { // if not empty
+			// string "gs"
+			o = append(o, 0xa2, 0x67, 0x73)
+			if (*z).Groups == nil {
+				o = msgp.AppendNil(o)
+			} else {
+				o = msgp.AppendArrayHeader(o, uint32(len((*z).Groups)))
+			}
+			for zb0001 := range (*z).Groups {
+				o, err = (*z).Groups[zb0001].MarshalMsg(o)
+				if err != nil {
+					err = msgp.WrapError(err, "Groups", zb0001)
+					return
+				}
+			}
+		}
+	}
+	return
+}
+
+func (_ *ExtendedAssetHoldings) CanMarshalMsg(z interface{}) bool {
+	_, ok := (z).(*ExtendedAssetHoldings)
+	return ok
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *ExtendedAssetHoldings) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var zb0002 int
+	var zb0003 bool
+	zb0002, zb0003, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if _, ok := err.(msgp.TypeError); ok {
+		zb0002, zb0003, bts, err = msgp.ReadArrayHeaderBytes(bts)
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		if zb0002 > 0 {
+			zb0002--
+			(*z).Count, bts, err = msgp.ReadUint32Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array", "Count")
+				return
+			}
+		}
+		if zb0002 > 0 {
+			zb0002--
+			var zb0004 int
+			var zb0005 bool
+			zb0004, zb0005, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array", "Groups")
+				return
+			}
+			if zb0004 > 1024 {
+				err = msgp.ErrOverflow(uint64(zb0004), uint64(1024))
+				err = msgp.WrapError(err, "struct-from-array", "Groups")
+				return
+			}
+			if zb0005 {
+				(*z).Groups = nil
+			} else if (*z).Groups != nil && cap((*z).Groups) >= zb0004 {
+				(*z).Groups = ((*z).Groups)[:zb0004]
+			} else {
+				(*z).Groups = make([]AssetsHoldingGroup, zb0004)
+			}
+			for zb0001 := range (*z).Groups {
+				bts, err = (*z).Groups[zb0001].UnmarshalMsg(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "struct-from-array", "Groups", zb0001)
+					return
+				}
+			}
+		}
+		if zb0002 > 0 {
+			err = msgp.ErrTooManyArrayFields(zb0002)
+			if err != nil {
+				err = msgp.WrapError(err, "struct-from-array")
+				return
+			}
+		}
+	} else {
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		if zb0003 {
+			(*z) = ExtendedAssetHoldings{}
+		}
+		for zb0002 > 0 {
+			zb0002--
+			field, bts, err = msgp.ReadMapKeyZC(bts)
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+			switch string(field) {
+			case "c":
+				(*z).Count, bts, err = msgp.ReadUint32Bytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Count")
+					return
+				}
+			case "gs":
+				var zb0006 int
+				var zb0007 bool
+				zb0006, zb0007, bts, err = msgp.ReadArrayHeaderBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Groups")
+					return
+				}
+				if zb0006 > 1024 {
+					err = msgp.ErrOverflow(uint64(zb0006), uint64(1024))
+					err = msgp.WrapError(err, "Groups")
+					return
+				}
+				if zb0007 {
+					(*z).Groups = nil
+				} else if (*z).Groups != nil && cap((*z).Groups) >= zb0006 {
+					(*z).Groups = ((*z).Groups)[:zb0006]
+				} else {
+					(*z).Groups = make([]AssetsHoldingGroup, zb0006)
+				}
+				for zb0001 := range (*z).Groups {
+					bts, err = (*z).Groups[zb0001].UnmarshalMsg(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "Groups", zb0001)
+						return
+					}
+				}
+			default:
+				err = msgp.ErrNoField(string(field))
+				if err != nil {
+					err = msgp.WrapError(err)
+					return
+				}
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+func (_ *ExtendedAssetHoldings) CanUnmarshalMsg(z interface{}) bool {
+	_, ok := (z).(*ExtendedAssetHoldings)
+	return ok
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z *ExtendedAssetHoldings) Msgsize() (s int) {
+	s = 1 + 2 + msgp.Uint32Size + 3 + msgp.ArrayHeaderSize
+	for zb0001 := range (*z).Groups {
+		s += (*z).Groups[zb0001].Msgsize()
+	}
+	return
+}
+
+// MsgIsZero returns whether this is a zero value
+func (z *ExtendedAssetHoldings) MsgIsZero() bool {
+	return ((*z).Count == 0) && (len((*z).Groups) == 0)
 }
 
 // MarshalMsg implements msgp.Marshaler

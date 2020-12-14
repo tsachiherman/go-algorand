@@ -220,3 +220,115 @@ func TestEncodedAccountAllocationBounds(t *testing.T) {
 		}
 	}
 }
+func TestEncodedAssetHoldingDataSize(t *testing.T) {
+	oneTimeSecrets := crypto.GenerateOneTimeSignatureSecrets(0, 1)
+	vrfSecrets := crypto.GenerateVRFSecrets()
+	maxStateSchema := StateSchema{
+		NumUint:      0x1234123412341234,
+		NumByteSlice: 0x1234123412341234,
+	}
+	ad := AccountData{
+		Status:             NotParticipating,
+		MicroAlgos:         MicroAlgos{},
+		RewardsBase:        0x1234123412341234,
+		RewardedMicroAlgos: MicroAlgos{},
+		VoteID:             oneTimeSecrets.OneTimeSignatureVerifier,
+		SelectionID:        vrfSecrets.PK,
+		VoteFirstValid:     Round(0x1234123412341234),
+		VoteLastValid:      Round(0x1234123412341234),
+		VoteKeyDilution:    0x1234123412341234,
+		AssetParams:        make(map[AssetIndex]AssetParams),
+		Assets:             make(map[AssetIndex]AssetHolding),
+		AppLocalStates:     make(map[AppIndex]AppLocalState),
+		AppParams:          make(map[AppIndex]AppParams),
+		TotalAppSchema:     maxStateSchema,
+		AuthAddr:           Address(crypto.Hash([]byte{1, 2, 3, 4})),
+	}
+	accountEncodedSize := func() int {
+		encodedBytes, _ := ad.MarshalMsg(nil)
+		return len(encodedBytes)
+	}
+	noAssetsEncodedSize := accountEncodedSize()
+	for i := 1; i < 65536; i *= 2 {
+
+		// create asset holding data
+		for j := 0; j < i; j++ {
+			assetIdx := AssetIndex(1000000 + j*7793)
+			ad.Assets[assetIdx] = AssetHolding{
+				Amount: 0x1234123412341234,
+				Frozen: (assetIdx%2 == 1),
+			}
+		}
+
+		assetSize := accountEncodedSize() - noAssetsEncodedSize
+		fmt.Printf("asset size for holding %d items is %d ( %d pages )\n", i, assetSize, 1+assetSize/4096)
+	}
+	return
+}
+
+func TestEncodedAssetHoldingProjectedDataSize(t *testing.T) {
+
+	for i := 1; i < 65536; i *= 2 {
+		ahd := []AssetsHoldingGroupData{}
+		holding := ExtendedAssetHoldings{Count: uint32(i), Groups: make([]AssetsHoldingGroup, 1+i/256)}
+		// create asset holding data
+		lastGroupIdx := -1
+		prevAssetIdx := AssetIndex(0)
+		prevFrozenAssetIdx := AssetIndex(0)
+		for j := 0; j < i; j++ {
+			assetIdx := AssetIndex(1000000 + j*7793)
+			groupIdx := j / 256
+			newGroup := lastGroupIdx != groupIdx
+			lastGroupIdx = groupIdx
+			holding.Groups[groupIdx].Count++
+			if newGroup {
+				holding.Groups[groupIdx].MinAssetIndex = assetIdx
+				holding.Groups[groupIdx].AssetGroupIndex = 0x1234123412341234
+			} else {
+				holding.Groups[groupIdx].MaxAssetIndexOffset = assetIdx - holding.Groups[groupIdx].MinAssetIndex
+			}
+			if newGroup {
+				var frozenIndices []AssetIndex
+				if assetIdx%2 == 1 {
+					frozenIndices = []AssetIndex{0}
+					prevFrozenAssetIdx = holding.Groups[groupIdx].MinAssetIndex
+				} else {
+					frozenIndices = []AssetIndex{}
+				}
+				ahd = append(ahd, AssetsHoldingGroupData{
+					AmountsAssetIndicesOffsets: []AssetIndex{0},
+					AssetsAmount:               []uint64{0x1234123412341234},
+					FrozedAssetIndicesOffsets:  frozenIndices,
+				})
+				prevAssetIdx = assetIdx
+			} else {
+				grp := ahd[len(ahd)-1]
+				grp.AmountsAssetIndicesOffsets = append(grp.AmountsAssetIndicesOffsets, assetIdx-prevAssetIdx)
+
+				if assetIdx%2 == 1 {
+					if len(grp.FrozedAssetIndicesOffsets) == 0 {
+						grp.FrozedAssetIndicesOffsets = []AssetIndex{assetIdx - holding.Groups[groupIdx].MinAssetIndex}
+						prevFrozenAssetIdx = holding.Groups[groupIdx].MinAssetIndex
+					} else {
+						grp.FrozedAssetIndicesOffsets = append(grp.FrozedAssetIndicesOffsets, assetIdx-prevFrozenAssetIdx)
+						prevFrozenAssetIdx = assetIdx
+					}
+				}
+				grp.AssetsAmount = append(grp.AssetsAmount, uint64(0x1234123412341234))
+				ahd[len(ahd)-1] = grp
+				prevAssetIdx = assetIdx
+			}
+		}
+
+		//fmt.Printf("group holding %#v\n", holding)
+		holdingBytes, _ := holding.MarshalMsg(nil)
+		totalGroup := 0
+		for _, groupHolding := range ahd {
+			fmt.Printf("group holding %#v\n", groupHolding)
+			encoded, _ := groupHolding.MarshalMsg(nil)
+			totalGroup += len(encoded)
+		}
+		fmt.Printf("asset size for holding %d items is %d+%d over %d blocks\n", i, len(holdingBytes), totalGroup, len(ahd))
+	}
+	return
+}
