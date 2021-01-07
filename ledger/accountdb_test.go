@@ -813,6 +813,9 @@ func BenchmarkWritingRandomBalancesDisk(b *testing.B) {
 		benchmarkInitBalances(b, startupAcct, dbs, proto)
 		dbs.wdb.SetSynchronousMode(context.Background(), db.SynchronousModeOff, false)
 
+		insertStart := time.Now()
+		accountCount := 0
+		accountBytes := uint64(0)
 		// insert 1M accounts data, in batches of 1000
 		for batch := 0; batch <= batchCount; batch++ {
 			fmt.Printf("\033[M\r %d / %d accounts written", totalStartupAccountsNumber*batch/batchCount, totalStartupAccountsNumber)
@@ -826,17 +829,22 @@ func BenchmarkWritingRandomBalancesDisk(b *testing.B) {
 			require.NoError(b, err)
 			defer replaceStmt.Close()
 			for addr, acctData := range acctsData {
-				_, err = replaceStmt.Exec(addr[:], uint64(0), protocol.Encode(&acctData))
+				acctd := protocol.Encode(&acctData)
+				accountBytes += uint64(len(acctd))
+				_, err = replaceStmt.Exec(addr[:], uint64(0), acctd)
 				require.NoError(b, err)
+				accountCount++
 			}
 
 			err = tx.Commit()
 			require.NoError(b, err)
 		}
+		fmt.Printf("\033[M\r")
+		b.Logf("%d bytes/acct", accountBytes/uint64(accountCount))
+		b.Logf("%0.5g ns/acct_insert", float64(int(time.Now().Sub(insertStart))/accountCount))
 		dbs.wdb.SetSynchronousMode(context.Background(), db.SynchronousModeFull, true)
 		tx, err := dbs.wdb.Handle.Begin()
 		require.NoError(b, err)
-		fmt.Printf("\033[M\r")
 		return tx, cleanup, err
 	}
 
@@ -869,7 +877,7 @@ func BenchmarkWritingRandomBalancesDisk(b *testing.B) {
 		require.NoError(b, err)
 		defer preparedUpdate.Close()
 		// updates accounts by address
-		randomAccountData := make([]byte, 200)
+		randomAccountData := make([]byte, 500)
 		crypto.RandBytes(randomAccountData)
 		updateOrder := rand.Perm(len(accountsRowID))
 		b.ResetTimer()
