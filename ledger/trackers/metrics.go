@@ -14,54 +14,39 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with go-algorand.  If not, see <https://www.gnu.org/licenses/>.
 
-package ledger
+package trackers
 
 import (
-	"fmt"
-
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/bookkeeping"
 	"github.com/algorand/go-algorand/ledger/common"
+	"github.com/algorand/go-algorand/util/metrics"
 )
 
-type timeTracker struct {
-	timestamps map[basics.Round]int64
+type metricsTracker struct {
+	ledgerTransactionsTotal *metrics.Counter
+	ledgerRewardClaimsTotal *metrics.Counter
+	ledgerRound             *metrics.Gauge
 }
 
-func (tt *timeTracker) loadFromDisk(l ledgerForTracker) error {
-	latest := l.Latest()
-	blkhdr, err := l.BlockHdr(latest)
-	if err != nil {
-		return err
-	}
-
-	tt.timestamps = make(map[basics.Round]int64)
-	tt.timestamps[latest] = blkhdr.TimeStamp
+func (mt *metricsTracker) loadFromDisk(l ledgerForTracker) error {
+	mt.ledgerTransactionsTotal = metrics.MakeCounter(metrics.LedgerTransactionsTotal)
+	mt.ledgerRewardClaimsTotal = metrics.MakeCounter(metrics.LedgerRewardClaimsTotal)
+	mt.ledgerRound = metrics.MakeGauge(metrics.LedgerRound)
 	return nil
 }
 
-func (tt *timeTracker) close() {
+func (mt *metricsTracker) close() {
 }
 
-func (tt *timeTracker) newBlock(blk bookkeeping.Block, delta common.StateDelta) {
+func (mt *metricsTracker) newBlock(blk bookkeeping.Block, delta common.StateDelta) {
 	rnd := blk.Round()
-	tt.timestamps[rnd] = delta.Hdr.TimeStamp
+	mt.ledgerRound.Set(float64(rnd), map[string]string{})
+	mt.ledgerTransactionsTotal.Add(float64(len(blk.Payset)), map[string]string{})
+	// TODO rewards: need to provide meaningful metric here.
+	mt.ledgerRewardClaimsTotal.Add(float64(1), map[string]string{})
 }
 
-func (tt *timeTracker) committedUpTo(committedRnd basics.Round) basics.Round {
-	for rnd := range tt.timestamps {
-		if rnd < committedRnd {
-			delete(tt.timestamps, rnd)
-		}
-	}
+func (mt *metricsTracker) committedUpTo(committedRnd basics.Round) basics.Round {
 	return committedRnd
-}
-
-func (tt *timeTracker) timestamp(r basics.Round) (int64, error) {
-	ts, ok := tt.timestamps[r]
-	if ok {
-		return ts, nil
-	}
-
-	return 0, fmt.Errorf("no record of timestamp for round %d", r)
 }
