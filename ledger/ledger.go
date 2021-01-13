@@ -483,7 +483,7 @@ func (l *Ledger) Totals(rnd basics.Round) (common.AccountTotals, error) {
 }
 
 // CheckDup return whether a transaction is a duplicate one.
-func (l *Ledger) CheckDup(currentProto config.ConsensusParams, current basics.Round, firstValid basics.Round, lastValid basics.Round, txid transactions.Txid, txl TxLease) error {
+func (l *Ledger) CheckDup(currentProto config.ConsensusParams, current basics.Round, firstValid basics.Round, lastValid basics.Round, txid transactions.Txid, txl common.Txlease) error {
 	l.trackerMu.RLock()
 	defer l.trackerMu.RUnlock()
 	return l.txTail.checkDup(currentProto, current, firstValid, lastValid, txid, txl.Txlease)
@@ -661,11 +661,6 @@ func (l *Ledger) IsWritingCatchpointFile() bool {
 // VerifiedTransactionCache returns the verify.VerifiedTransactionCache
 func (l *Ledger) VerifiedTransactionCache() verify.VerifiedTransactionCache {
 	return l.verifiedTxnCache
-}
-
-// TxLease is an exported version of txlease
-type TxLease struct {
-	common.Txlease
 }
 
 var ledgerInitblocksdbCount = metrics.NewCounter("ledger_initblocksdb_count", "calls")
