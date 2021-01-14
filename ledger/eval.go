@@ -978,7 +978,14 @@ func (eval *BlockEvaluator) finalValidation() error {
 			return fmt.Errorf("CompactCertLastRound wrong: %v != %v", eval.block.CompactCertLastRound, eval.state.compactCertLast())
 		}
 	}
-
+	if eval.generate {
+		leanPayset := make([]transactions.SignedTxnInBlock, len(eval.block.Payset))
+		for i := range leanPayset {
+			leanPayset[i].SignedTxn = eval.block.Payset[i].SignedTxn
+			leanPayset[i].HasGenesisID = eval.block.Payset[i].HasGenesisID
+		}
+		eval.block.Payset = leanPayset
+	}
 	return nil
 }
 
