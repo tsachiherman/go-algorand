@@ -40,6 +40,7 @@ const (
 	UniEnsBlockResTag  Tag = "US"
 	UniCatchupResTag   Tag = "UT"
 	VoteBundleTag      Tag = "VB"
+	Txn2Tag            Tag = "tx"
 )
 
 // Complement is a convenience function for returning a corresponding response/request tag
