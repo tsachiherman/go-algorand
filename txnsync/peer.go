@@ -23,10 +23,22 @@ import (
 	"github.com/algorand/go-algorand/protocol"
 )
 
+type peerState int
+
+const (
+	// peerStateStartup is before the timeout for the sending the first message to the peer has reached
+	peerStateStartup peerState = iota
+	// peerStateHoldsoff is set once a message was sent to a peer, and we're holding off before sending additional messages.
+	peerStateHoldsoff
+	// peerStateInterrupt is set once the holdoff period for the peer have expired.
+	peerStateInterrupt
+)
+
 // Peer contains peer-related data which extends the data "known" and managed by the network package.
 type Peer struct {
 	// networkPeer is the network exported peer
 	networkPeer interface{}
+	state       peerState
 }
 
 func makePeer(networkPeer interface{}) *Peer {

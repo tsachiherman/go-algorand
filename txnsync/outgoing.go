@@ -22,8 +22,7 @@ import (
 	"github.com/algorand/go-algorand/data/transactions"
 )
 
-func (s *syncState) sendMessageLoop(timeout <-chan time.Time) {
-	peers := s.getTxSyncPeers()
+func (s *syncState) sendMessageLoop(peers []*Peer, timeout <-chan time.Time) {
 	if len(peers) == 0 {
 		// no peers - no messages that need to be sent.
 		return
@@ -43,24 +42,6 @@ func (s *syncState) sendMessageLoop(timeout <-chan time.Time) {
 			return
 		}
 	}
-}
-
-func (s *syncState) getTxSyncPeers() []*Peer {
-	syncPeers, networkPeersHandle := s.node.GetPeers()
-	updatedNetworkPeers := []interface{}{}
-	updatedNetworkPeersSync := []*Peer{}
-	// some of the network peers might not have a sync peer, so we need to create one for these.
-	for i, syncPeer := range syncPeers {
-		if syncPeer == nil {
-			syncPeers[i] = makePeer(networkPeersHandle[i])
-			updatedNetworkPeers = append(updatedNetworkPeers, networkPeersHandle[i])
-			updatedNetworkPeersSync = append(updatedNetworkPeersSync, syncPeers[i])
-		}
-	}
-	if len(updatedNetworkPeers) > 0 {
-		s.node.UpdatePeers(updatedNetworkPeersSync, updatedNetworkPeers)
-	}
-	return syncPeers
 }
 
 func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transactions.SignedTxn) ([]byte, *transactionBlockMessage) {

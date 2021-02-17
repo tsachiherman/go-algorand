@@ -37,28 +37,32 @@ type syncState struct {
 	log     logging.Logger
 	node    NodeConnector
 
-	nextSyncTime      time.Duration
-	nextInterruptTime time.Duration
-	preKickoff        bool
-	lastBeta          time.Duration
-	interruptEnable   bool
-	round             basics.Round
-	fetchTransactions bool
+	lastBeta           time.Duration
+	round              basics.Round
+	fetchTransactions  bool
+	scheduler          peerScheduler
+	interruptablePeers map[*Peer]bool
 }
 
 func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	s.interruptablePeers = make(map[*Peer]bool)
+	s.scheduler.node = s.node
 	s.lastBeta = s.beta(0)
 	startRound := s.node.CurrentRound()
 	s.onNewRoundEvent(MakeNewRoundEvent(startRound, false))
 
 	externalEvents := s.node.Events()
 	clock := s.node.Clock()
-
+	var nextSyncCh <-chan time.Time
 	for {
-		nextSyncCh := clock.TimeoutAt(s.nextSyncTime)
-		nextInterruptCh := clock.TimeoutAt(s.nextInterruptTime)
+		nextAction := s.scheduler.nextDuration()
+		if nextAction != time.Duration(0) {
+			nextSyncCh = clock.TimeoutAt(nextAction)
+		} else {
+			nextSyncCh = nil
+		}
 		select {
 		case ent := <-externalEvents:
 			switch ent.eventType {
@@ -68,10 +72,8 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 				s.onNewRoundEvent(ent)
 			}
 		case <-nextSyncCh:
-			s.sendMessages()
+			s.evaluateSendingMessages(nextAction)
 			s.log.Infof("sync time")
-		case <-nextInterruptCh:
-			s.onNextInterrupt()
 		case <-serviceCtx.Done():
 			return
 		}
@@ -79,9 +81,6 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 }
 
 func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
-	if !s.interruptEnable {
-		return
-	}
 	newBeta := s.beta(ent.transactionPoolSize)
 	// see if the newBeta is at least 20% smaller than the current one.
 	if (s.lastBeta * 8 / 10) <= newBeta {
@@ -91,17 +90,18 @@ func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
 	// yes, the number of transactions in the pool have changed dramatically since the last time.
 	s.lastBeta = newBeta
 
-	// reseting the clock and setting the next sync to zero would make it trigger right away.
-	s.node.Clock().Zero()
+	currentTimeout := time.Duration(0) // todo : figure this out.
 
-	s.nextSyncTime = 0
-	s.nextInterruptTime = s.holdsoffDuration()
-	s.interruptEnable = false
-}
+	peers := make([]*Peer, 0, len(s.interruptablePeers))
+	for peer := range s.interruptablePeers {
+		peers = append(peers, peer)
+		peer.state = peerStateHoldsoff
+		s.scheduler.reschedulerPeer(peer, currentTimeout+s.lastBeta)
+	}
 
-func (s *syncState) onNextInterrupt() {
-	// enable msg sending interrupts.
-	s.interruptEnable = true
+	sendMessagesTimeout := s.node.Clock().TimeoutAt(currentTimeout + sendMessagesTime)
+	s.sendMessageLoop(peers, sendMessagesTimeout)
+
 }
 
 // calculate the beta parameter, based on the transcation pool size.
@@ -118,22 +118,37 @@ func (s *syncState) beta(txPoolSize int) time.Duration {
 
 func (s *syncState) onNewRoundEvent(ent Event) {
 	s.node.Clock().Zero()
-	s.nextSyncTime = kickoffTime + time.Duration(s.node.Random(uint64(randomRange)))
-	s.nextInterruptTime = s.nextSyncTime + s.holdsoffDuration()
-	s.preKickoff = true
-	s.interruptEnable = false
+	s.scheduler.scheduleNewRound()
 	s.round = ent.round
 	s.fetchTransactions = ent.fetchTransactions
 }
 
-func (s *syncState) sendMessages() {
-	sendMessageTimeout := s.node.Clock().TimeoutAt(s.nextSyncTime + sendMessagesTime)
-	s.sendMessageLoop(sendMessageTimeout)
+func (s *syncState) evaluateSendingMessages(currentTimeout time.Duration) {
+	peers := s.scheduler.nextPeers()
+	if len(peers) == 0 {
+		return
+	}
 
-	// update the next time a message need to be sent.
-	s.nextInterruptTime = s.nextSyncTime + s.holdsoffDuration()
-	s.nextSyncTime = s.nextInterruptTime + s.holdsoffDuration()
-	s.interruptEnable = false
+	sendMessagePeers := 0
+	for _, peer := range peers {
+		switch peer.state {
+		case peerStateHoldsoff:
+			peer.state = peerStateInterrupt
+			s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
+			s.interruptablePeers[peer] = true
+		default: // peerStateStartup && peerStateInterrupt
+			peer.state = peerStateHoldsoff
+			s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
+			// prepare the send message array.
+			peers[sendMessagePeers] = peer
+			sendMessagePeers++
+			delete(s.interruptablePeers, peer)
+		}
+	}
+
+	peers = peers[:sendMessagePeers]
+	sendMessagesTimeout := s.node.Clock().TimeoutAt(currentTimeout + sendMessagesTime)
+	s.sendMessageLoop(peers, sendMessagesTimeout)
 }
 
 func (s *syncState) holdsoffDuration() time.Duration {
