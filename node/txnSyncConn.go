@@ -32,9 +32,10 @@ import (
 // transcationSyncNodeConnector implementes the txnsync.NodeConnector interface, allowing the
 // transaction sync communicate with the node and it's child objects.
 type transcationSyncNodeConnector struct {
-	node     *AlgorandFullNode
-	eventsCh chan txnsync.Event
-	clock    timers.Clock
+	node           *AlgorandFullNode
+	eventsCh       chan txnsync.Event
+	clock          timers.WallClock
+	messageHandler txnsync.IncomingMessageHandler
 }
 
 func makeTranscationSyncNodeConnector(node *AlgorandFullNode) transcationSyncNodeConnector {
@@ -57,7 +58,7 @@ func (tsnc *transcationSyncNodeConnector) Random(rng uint64) uint64 {
 	return tsnc.node.Uint64() % rng
 }
 
-func (tsnc *transcationSyncNodeConnector) Clock() timers.Clock {
+func (tsnc *transcationSyncNodeConnector) Clock() timers.WallClock {
 	return tsnc.clock
 }
 
@@ -65,11 +66,23 @@ func (tsnc *transcationSyncNodeConnector) GetPeers() (txsyncPeers []*txnsync.Pee
 	networkPeers := tsnc.node.net.GetPeers(network.PeersConnectedOut, network.PeersConnectedIn)
 	txsyncPeers = make([]*txnsync.Peer, len(networkPeers))
 	netPeers = make([]interface{}, len(networkPeers))
+	k := 0
 	for i := range networkPeers {
-		netPeers[i] = networkPeers[i]
-		txsyncPeers[i] = tsnc.node.net.GetPeerData(networkPeers[i], "txsync").(*txnsync.Peer)
+		unicastPeer := networkPeers[i].(network.UnicastPeer)
+		if unicastPeer == nil {
+			continue
+		}
+		// check version.
+		if unicastPeer.Version() != "2.5" {
+			continue
+		}
+
+		netPeers[k] = networkPeers[i]
+		txsyncPeers[k] = tsnc.node.net.GetPeerData(networkPeers[i], "txsync").(*txnsync.Peer)
+		k++
 	}
-	return txsyncPeers, netPeers
+
+	return txsyncPeers[:k], netPeers[:k]
 }
 
 func (tsnc *transcationSyncNodeConnector) UpdatePeers(txsyncPeers []*txnsync.Peer, netPeers []interface{}) {
@@ -108,4 +121,37 @@ func (tsnc *transcationSyncNodeConnector) onNewRound(round basics.Round, hasPart
 	case tsnc.eventsCh <- txnsync.MakeNewRoundEvent(round, fetchTransactions):
 	default:
 	}
+}
+
+func (tsnc *transcationSyncNodeConnector) start() {
+	tsnc.messageHandler = tsnc.node.txnSyncService.GetIncomingMessageHandler()
+	handlers := []network.TaggedMessageHandler{
+		{Tag: protocol.Txn2Tag, MessageHandler: tsnc},
+	}
+	tsnc.node.net.RegisterHandlers(handlers)
+}
+
+func (tsnc *transcationSyncNodeConnector) Handle(raw network.IncomingMessage) network.OutgoingMessage {
+	unicastPeer := raw.Sender.(network.UnicastPeer)
+	if unicastPeer != nil {
+		// check version.
+		if unicastPeer.Version() != "2.5" {
+			return network.OutgoingMessage{
+				Action: network.Ignore,
+			}
+		}
+	}
+	err := tsnc.messageHandler(raw.Sender, raw.Data, raw.Sequence)
+	if err == nil {
+		return network.OutgoingMessage{
+			Action: network.Ignore,
+		}
+	}
+	return network.OutgoingMessage{
+		Action: network.Disconnect,
+	}
+}
+
+func (tsnc *transcationSyncNodeConnector) stop() {
+
 }

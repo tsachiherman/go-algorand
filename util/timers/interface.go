@@ -18,6 +18,7 @@
 package timers
 
 import (
+	"context"
 	"time"
 )
 
@@ -40,4 +41,21 @@ type Clock interface {
 	// A Clock which has been Decoded from an Encoded Clock should produce
 	// the same timeouts as the original Clock.
 	Decode([]byte) (Clock, error)
+}
+
+// WallClock extends the Clock interface by providing a referencial timing, allowing to create
+// timed events that are differential.
+type WallClock interface {
+	Clock
+
+	// Since returns the time spent between the last time the clock was zeroed out and the current
+	// wall clock time.
+	Since() time.Duration
+
+	// TimeoutAtContext returns a context that expires after the provided delta time from zero has passed.
+	// If delta has already passed, it returns an expired context.
+	// The function is symmetrical to TimeoutAt, but use the Context construct.
+	//
+	// TimeoutAtContext must be called after Zero; otherwise, the context's behavior is undefined.
+	TimeoutAtContext(delta time.Duration) context.Context
 }

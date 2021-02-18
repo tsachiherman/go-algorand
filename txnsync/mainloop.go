@@ -73,7 +73,7 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 			}
 		case <-nextSyncCh:
 			s.evaluateSendingMessages(nextAction)
-			s.log.Infof("sync time")
+			//s.log.Infof("sync time")
 		case <-serviceCtx.Done():
 			return
 		}
@@ -90,18 +90,31 @@ func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
 	// yes, the number of transactions in the pool have changed dramatically since the last time.
 	s.lastBeta = newBeta
 
-	currentTimeout := time.Duration(0) // todo : figure this out.
-
 	peers := make([]*Peer, 0, len(s.interruptablePeers))
 	for peer := range s.interruptablePeers {
 		peers = append(peers, peer)
 		peer.state = peerStateHoldsoff
-		s.scheduler.reschedulerPeer(peer, currentTimeout+s.lastBeta)
+
 	}
+	// reset the interruptablePeers table, since all it's members were made into holdsoff
+	s.interruptablePeers = make(map[*Peer]bool)
 
-	sendMessagesTimeout := s.node.Clock().TimeoutAt(currentTimeout + sendMessagesTime)
-	s.sendMessageLoop(peers, sendMessagesTimeout)
+	sendCtx := s.node.Clock().TimeoutAtContext(s.node.Clock().Since() + sendMessagesTime)
+	s.sendMessageLoop(sendCtx, peers)
 
+	currentTimeout := s.node.Clock().Since()
+	for _, peer := range peers {
+		peerNext := s.scheduler.peerDuration(peer)
+		if peerNext < currentTimeout {
+			// shouldn't be, but let's reschedule it if this is the case.
+			s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
+			continue
+		}
+		// given that peerNext is after currentTimeout, find out what's the difference, and divide by the beta.
+		betaCount := (peerNext - currentTimeout) / s.lastBeta
+		peerNext = currentTimeout + s.lastBeta*betaCount
+		s.scheduler.schedulerPeer(peer, peerNext)
+	}
 }
 
 // calculate the beta parameter, based on the transcation pool size.
@@ -147,8 +160,8 @@ func (s *syncState) evaluateSendingMessages(currentTimeout time.Duration) {
 	}
 
 	peers = peers[:sendMessagePeers]
-	sendMessagesTimeout := s.node.Clock().TimeoutAt(currentTimeout + sendMessagesTime)
-	s.sendMessageLoop(peers, sendMessagesTimeout)
+	sendCtx := s.node.Clock().TimeoutAtContext(currentTimeout + sendMessagesTime)
+	s.sendMessageLoop(sendCtx, peers)
 }
 
 func (s *syncState) holdsoffDuration() time.Duration {

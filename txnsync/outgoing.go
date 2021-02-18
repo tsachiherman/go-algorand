@@ -17,12 +17,13 @@
 package txnsync
 
 import (
+	"context"
 	"time"
 
 	"github.com/algorand/go-algorand/data/transactions"
 )
 
-func (s *syncState) sendMessageLoop(peers []*Peer, timeout <-chan time.Time) {
+func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 	if len(peers) == 0 {
 		// no peers - no messages that need to be sent.
 		return
@@ -36,10 +37,9 @@ func (s *syncState) sendMessageLoop(peers []*Peer, timeout <-chan time.Time) {
 			//s.logPeerMessageSent(peer, peerMsg)
 		}
 
-		select {
-		case <-timeout:
+		if ctx.Err() != nil {
 			// we ran out of time sending messages, stop sending any more messages.
-			return
+			break
 		}
 	}
 }

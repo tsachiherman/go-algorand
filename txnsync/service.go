@@ -37,10 +37,16 @@ type Service struct {
 
 // MakeTranscationSyncService creates a new Service object
 func MakeTranscationSyncService(log logging.Logger, conn NodeConnector) *Service {
-	return &Service{
+	s := &Service{
 		log:      log,
 		nodeConn: conn,
+		state: syncState{
+			node: conn,
+			log:  log,
+		},
 	}
+	s.state.service = s
+	return s
 }
 
 // Start starts the transaction sync
@@ -48,12 +54,7 @@ func (s *Service) Start() {
 	s.ctx, s.cancelCtx = context.WithCancel(context.Background())
 	s.waitGroup.Add(1)
 
-	state := syncState{
-		service: s,
-		node:    s.nodeConn,
-		log:     s.log,
-	}
-	go state.mainloop(s.ctx, &s.waitGroup)
+	go s.state.mainloop(s.ctx, &s.waitGroup)
 }
 
 // Stop stops the transaction sync
@@ -64,4 +65,9 @@ func (s *Service) Stop() {
 	s.waitGroup.Wait()
 	// clear the context, as we won't be using it anymore.
 	s.cancelCtx, s.ctx = nil, nil
+}
+
+// GetIncomingMessageHandler returns the message handler.
+func (s *Service) GetIncomingMessageHandler() IncomingMessageHandler {
+	return s.state.incomingMessageHandler
 }

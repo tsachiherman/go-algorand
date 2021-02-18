@@ -39,11 +39,14 @@ type Event struct {
 	fetchTransactions   bool // for non-relays that has no participation keys, there is no need to request transactions
 }
 
+// IncomingMessageHandler is the signature of the incoming message handler used by the transaction sync to receive network messages
+type IncomingMessageHandler func(networkPeer interface{}, message []byte, sequenceNumber uint64) error
+
 // NodeConnector is used by the transaction sync for communicating with components external to the txnsync package.
 type NodeConnector interface {
 	Events() <-chan Event
 	CurrentRound() basics.Round // return the current round from the ledger.
-	Clock() timers.Clock
+	Clock() timers.WallClock
 	Random(uint64) uint64
 	GetPeers() ([]*Peer, []interface{})
 	UpdatePeers([]*Peer, []interface{})

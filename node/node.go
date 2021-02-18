@@ -363,6 +363,7 @@ func (node *AlgorandFullNode) Start() {
 		node.txHandler.Start()
 		node.compactCert.Start()
 		node.txnSyncService.Start()
+		node.txnSyncConnector.start()
 
 		// start indexer
 		if idx, err := node.Indexer(); err == nil {
@@ -997,6 +998,7 @@ func (node *AlgorandFullNode) SetCatchpointCatchupMode(catchpointCatchupMode boo
 		node.ledgerService.Start()
 		node.txHandler.Start()
 		node.txnSyncService.Start()
+		node.txnSyncConnector.start()
 
 		// start indexer
 		if idx, err := node.Indexer(); err == nil {

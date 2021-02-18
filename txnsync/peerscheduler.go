@@ -117,13 +117,13 @@ func (p *peerScheduler) schedulerPeer(peer *Peer, next time.Duration) {
 	heap.Push(p, bucket)
 }
 
-func (p *peerScheduler) reschedulerPeer(peer *Peer, next time.Duration) {
+func (p *peerScheduler) peerDuration(peer *Peer) time.Duration {
 	for i := 0; i < len(p.peers); i++ {
 		if p.peers[i].peer != peer {
 			continue
 		}
-		p.peers[i].next = next
-		heap.Fix(p, i)
-		break
+		bucket := heap.Remove(p, i).(peerBucket)
+		return bucket.next
 	}
+	return time.Duration(0)
 }

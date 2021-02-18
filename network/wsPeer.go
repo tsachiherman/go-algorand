@@ -75,6 +75,7 @@ var defaultSendMessageTags = map[protocol.Tag]bool{
 	protocol.UniCatchupReqTag:   true,
 	protocol.UniEnsBlockReqTag:  true,
 	protocol.VoteBundleTag:      true,
+	protocol.Txn2Tag:            true,
 }
 
 // interface allows substituting debug implementation for *websocket.Conn
@@ -365,6 +366,7 @@ func (wp *wsPeer) readLoop() {
 	}()
 	wp.conn.SetReadLimit(maxMessageLength)
 	slurper := MakeLimitedReaderSlurper(averageMessageLength, maxMessageLength)
+	sequenceCounters := make(map[protocol.Tag]uint64)
 	for {
 		msg := IncomingMessage{}
 		mtype, reader, err := wp.conn.NextReader()
@@ -408,6 +410,8 @@ func (wp *wsPeer) readLoop() {
 		networkReceivedBytesTotal.AddUint64(uint64(len(msg.Data)+2), nil)
 		networkMessageReceivedTotal.AddUint64(1, nil)
 		msg.Sender = wp
+		msg.Sequence = sequenceCounters[msg.Tag]
+		sequenceCounters[msg.Tag] = msg.Sequence + 1
 
 		// for outgoing connections, we want to notify the connection monitor that we've received
 		// a message. The connection monitor would update it's statistics accordingly.

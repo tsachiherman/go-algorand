@@ -215,6 +215,9 @@ type IncomingMessage struct {
 	Err    error
 	Net    GossipNode
 
+	// Sequence is the sequence number of the message for the specific tag and peer
+	Sequence uint64
+
 	// Received is time.Time.UnixNano()
 	Received int64
 
@@ -1787,14 +1790,15 @@ const ProtocolVersionHeader = "X-Algorand-Version"
 const ProtocolAcceptVersionHeader = "X-Algorand-Accept-Version"
 
 // SupportedProtocolVersions contains the list of supported protocol versions by this node ( in order of preference ).
-var SupportedProtocolVersions = []string{"2.1"}
+var SupportedProtocolVersions = []string{"2.5", "2.1"}
 
 // ProtocolVersion is the current version attached to the ProtocolVersionHeader header
 /* Version history:
  *  1   Catchup service over websocket connections with unicast messages between peers
  *  2.1 Introducted topic key/data pairs and enabled services over the gossip connections
+ *  2.5 Introducted new transaction gossiping protocol
  */
-const ProtocolVersion = "2.1"
+const ProtocolVersion = "2.5"
 
 // TelemetryIDHeader HTTP header for telemetry-id for logging
 const TelemetryIDHeader = "X-Algorand-TelId"

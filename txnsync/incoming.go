@@ -15,3 +15,7 @@
 // along with go-algorand.  If not, see <https://www.gnu.org/licenses/>.
 
 package txnsync
+
+func (s *syncState) incomingMessageHandler(networkPeer interface{}, message []byte, sequenceNumber uint64) error {
+	return nil
+}
