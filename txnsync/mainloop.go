@@ -42,12 +42,14 @@ type syncState struct {
 	fetchTransactions  bool
 	scheduler          peerScheduler
 	interruptablePeers map[*Peer]bool
+	incomingMessagesCh chan incomingMessage
 }
 
 func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	s.interruptablePeers = make(map[*Peer]bool)
+	s.incomingMessagesCh = make(chan incomingMessage, 1024)
 	s.scheduler.node = s.node
 	s.lastBeta = s.beta(0)
 	startRound := s.node.CurrentRound()
@@ -57,9 +59,9 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	clock := s.node.Clock()
 	var nextSyncCh <-chan time.Time
 	for {
-		nextAction := s.scheduler.nextDuration()
-		if nextAction != time.Duration(0) {
-			nextSyncCh = clock.TimeoutAt(nextAction)
+		nextSync := s.scheduler.nextDuration()
+		if nextSync != time.Duration(0) {
+			nextSyncCh = clock.TimeoutAt(nextSync)
 		} else {
 			nextSyncCh = nil
 		}
@@ -72,8 +74,9 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 				s.onNewRoundEvent(ent)
 			}
 		case <-nextSyncCh:
-			s.evaluateSendingMessages(nextAction)
-			//s.log.Infof("sync time")
+			s.evaluateSendingMessages(nextSync)
+		case incomingMsg := <-s.incomingMessagesCh:
+			s.evaluateIncomingMessages(incomingMsg)
 		case <-serviceCtx.Done():
 			return
 		}

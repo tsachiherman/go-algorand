@@ -19,6 +19,7 @@ package txnsync
 import (
 	"time"
 
+	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/transactions"
 	"github.com/algorand/go-algorand/protocol"
 )
@@ -36,9 +37,15 @@ const (
 
 // Peer contains peer-related data which extends the data "known" and managed by the network package.
 type Peer struct {
-	// networkPeer is the network exported peer
+	// networkPeer is the network package exported peer. It's created on construction and never change afterward.
 	networkPeer interface{}
-	state       peerState
+	// state defines the peer state ( in terms of state machine state ). It's touched only by the sync main state machine
+	state peerState
+
+	lastRound basics.Round
+
+	incomingMessages messageOrderingHeap
+	nextMessageSeq   uint64
 }
 
 func makePeer(networkPeer interface{}) *Peer {

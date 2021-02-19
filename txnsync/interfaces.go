@@ -40,7 +40,7 @@ type Event struct {
 }
 
 // IncomingMessageHandler is the signature of the incoming message handler used by the transaction sync to receive network messages
-type IncomingMessageHandler func(networkPeer interface{}, message []byte, sequenceNumber uint64) error
+type IncomingMessageHandler func(networkPeer interface{}, peer *Peer, message []byte, sequenceNumber uint64) error
 
 // NodeConnector is used by the transaction sync for communicating with components external to the txnsync package.
 type NodeConnector interface {

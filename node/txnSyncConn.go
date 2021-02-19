@@ -141,7 +141,9 @@ func (tsnc *transcationSyncNodeConnector) Handle(raw network.IncomingMessage) ne
 			}
 		}
 	}
-	err := tsnc.messageHandler(raw.Sender, raw.Data, raw.Sequence)
+	peerData := tsnc.node.net.GetPeerData(raw.Sender, "txsync").(*txnsync.Peer)
+
+	err := tsnc.messageHandler(raw.Sender, peerData, raw.Data, raw.Sequence)
 	if err == nil {
 		return network.OutgoingMessage{
 			Action: network.Ignore,
