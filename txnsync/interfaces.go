@@ -42,6 +42,9 @@ type Event struct {
 // IncomingMessageHandler is the signature of the incoming message handler used by the transaction sync to receive network messages
 type IncomingMessageHandler func(networkPeer interface{}, peer *Peer, message []byte, sequenceNumber uint64) error
 
+// SendMessageCallback define a message sent feedback for performing message tracking
+type SendMessageCallback func(enqueued bool, sequenceNumber uint32)
+
 // NodeConnector is used by the transaction sync for communicating with components external to the txnsync package.
 type NodeConnector interface {
 	Events() <-chan Event
@@ -50,7 +53,7 @@ type NodeConnector interface {
 	Random(uint64) uint64
 	GetPeers() ([]*Peer, []interface{})
 	UpdatePeers([]*Peer, []interface{})
-	SendPeerMessage(netPeer interface{}, msg []byte) error
+	SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback)
 	GetPendingTransactionGroups() [][]transactions.SignedTxn
 	IncomingTransactionGroups(interface{}, [][]transactions.SignedTxn)
 }

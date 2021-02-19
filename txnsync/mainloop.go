@@ -37,12 +37,13 @@ type syncState struct {
 	log     logging.Logger
 	node    NodeConnector
 
-	lastBeta           time.Duration
-	round              basics.Round
-	fetchTransactions  bool
-	scheduler          peerScheduler
-	interruptablePeers map[*Peer]bool
-	incomingMessagesCh chan incomingMessage
+	lastBeta                   time.Duration
+	round                      basics.Round
+	fetchTransactions          bool
+	scheduler                  peerScheduler
+	interruptablePeers         map[*Peer]bool
+	incomingMessagesCh         chan incomingMessage
+	outgoingMessagesCallbackCh chan messageSentCallback
 }
 
 func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
@@ -50,6 +51,7 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 
 	s.interruptablePeers = make(map[*Peer]bool)
 	s.incomingMessagesCh = make(chan incomingMessage, 1024)
+	s.outgoingMessagesCallbackCh = make(chan messageSentCallback, 1024)
 	s.scheduler.node = s.node
 	s.lastBeta = s.beta(0)
 	startRound := s.node.CurrentRound()

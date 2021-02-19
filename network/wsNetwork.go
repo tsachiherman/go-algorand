@@ -1061,7 +1061,7 @@ func (wn *WebsocketNetwork) ServeHTTP(response http.ResponseWriter, request *htt
 		})
 
 	if wn.messagesOfInterestEnc != nil {
-		err = peer.Unicast(wn.ctx, wn.messagesOfInterestEnc, protocol.MsgOfInterestTag)
+		err = peer.Unicast(wn.messagesOfInterestEnc, protocol.MsgOfInterestTag, nil)
 		if err != nil {
 			wn.log.Infof("ws send msgOfInterest: %v", err)
 		}
@@ -1340,7 +1340,7 @@ func (wn *WebsocketNetwork) innerBroadcast(request broadcastRequest, prio bool, 
 		if peer == request.except {
 			continue
 		}
-		ok := peer.writeNonBlock(mbytes, prio, digest, request.enqueueTime)
+		ok := peer.writeNonBlock(mbytes, prio, digest, request.enqueueTime, nil)
 		if ok {
 			sentMessageCount++
 			continue
@@ -2038,7 +2038,7 @@ func (wn *WebsocketNetwork) tryConnect(addr, gossipAddr string) {
 			resp := wn.prioScheme.MakePrioResponse(challenge)
 			if resp != nil {
 				mbytes := append([]byte(protocol.NetPrioResponseTag), resp...)
-				sent := peer.writeNonBlock(mbytes, true, crypto.Digest{}, time.Now())
+				sent := peer.writeNonBlock(mbytes, true, crypto.Digest{}, time.Now(), nil)
 				if !sent {
 					wn.log.With("remote", addr).With("local", localAddr).Warnf("could not send priority response to %v", addr)
 				}

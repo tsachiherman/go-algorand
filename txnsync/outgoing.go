@@ -23,22 +23,47 @@ import (
 	"github.com/algorand/go-algorand/data/transactions"
 )
 
+type messageSentCallback struct {
+	encodedMessageSize  int
+	sentTranscationsIDs []transactions.Txid
+	sentMessage         *transactionBlockMessage
+	peer                *Peer
+	state               *syncState
+	sentTimestamp       time.Duration
+}
+
+// asyncMessageSent called via the network package to inform the txsync that a message was enqueued, and the associated sequence number.
+func (msc *messageSentCallback) asyncMessageSent(enqueued bool, sequenceNumber uint32) {
+	if !enqueued {
+		return
+	}
+	// record the timestamp here, before placing the entry on the queue
+	msc.sentTimestamp = msc.state.node.Clock().Since()
+
+	select {
+	case msc.state.outgoingMessagesCallbackCh <- *msc:
+	default:
+		// if we can't place it on the channel, just let it drop and log it.
+	}
+}
+
 func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 	if len(peers) == 0 {
 		// no peers - no messages that need to be sent.
 		return
 	}
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
-
+	var encodedMessage []byte
 	for _, peer := range peers {
-		encodedMsg, txMsg, TxnIDs := s.assemblePeerMessage(peer, pendingTransactionGroups)
-		err := s.node.SendPeerMessage(peer.networkPeer, encodedMsg)
-		if err == nil {
+		msgCallback := &messageSentCallback{peer: peer}
+		encodedMessage, msgCallback.sentMessage, msgCallback.sentTranscationsIDs = s.assemblePeerMessage(peer, pendingTransactionGroups)
+		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
+		/*if err == nil {
 			// if we successfully sent the message, we should make note of that on the peer.
 			peer.updateMessageSent(txMsg, TxnIDs)
 
 			//s.logPeerMessageSent(peer, peerMsg)
-		}
+		}*/
 
 		if ctx.Err() != nil {
 			// we ran out of time sending messages, stop sending any more messages.

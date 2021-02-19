@@ -18,7 +18,6 @@
 package node
 
 import (
-	"context"
 	"time"
 
 	"github.com/algorand/go-algorand/data"
@@ -94,12 +93,17 @@ func (tsnc *transcationSyncNodeConnector) UpdatePeers(txsyncPeers []*txnsync.Pee
 	}
 }
 
-func (tsnc *transcationSyncNodeConnector) SendPeerMessage(netPeer interface{}, msg []byte) error {
+func (tsnc *transcationSyncNodeConnector) SendPeerMessage(netPeer interface{}, msg []byte, callback txnsync.SendMessageCallback) {
 	unicastPeer := netPeer.(network.UnicastPeer)
 	if unicastPeer == nil {
-		return nil
+		return
 	}
-	return unicastPeer.Unicast(context.Background(), msg, protocol.Txn2Tag)
+	if err := unicastPeer.Unicast(msg, protocol.Txn2Tag, func(enqueued bool, sequenceNumber uint64) {
+		callback(enqueued, uint32(sequenceNumber))
+	}); err != nil {
+		callback(false, 0)
+		return
+	}
 }
 
 func (tsnc *transcationSyncNodeConnector) GetPendingTransactionGroups() [][]transactions.SignedTxn {

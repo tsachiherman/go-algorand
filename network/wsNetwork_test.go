@@ -277,9 +277,9 @@ func TestWebsocketNetworkUnicast(t *testing.T) {
 	require.Equal(t, 1, len(netA.peers))
 	require.Equal(t, 1, len(netA.GetPeers(PeersConnectedIn)))
 	peerB := netA.peers[0]
-	err := peerB.Unicast(context.Background(), []byte("foo"), protocol.TxnTag)
+	err := peerB.Unicast([]byte("foo"), protocol.TxnTag, nil)
 	assert.NoError(t, err)
-	err = peerB.Unicast(context.Background(), []byte("bar"), protocol.TxnTag)
+	err = peerB.Unicast([]byte("bar"), protocol.TxnTag, nil)
 	assert.NoError(t, err)
 
 	select {

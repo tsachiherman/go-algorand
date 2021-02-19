@@ -31,7 +31,7 @@ type incomingMessage struct {
 
 // incomingMessageHandler
 // note - this message is called by the network go-routine dispatch pool, and is not syncronized with the rest of the transaction syncronizer
-func (s *syncState) incomingMessageHandler(networkPeer interface{}, peer *Peer, message []byte, sequenceNumber uint64) error {
+func (s *syncState) asyncIncomingMessageHandler(networkPeer interface{}, peer *Peer, message []byte, sequenceNumber uint64) error {
 	var txMsg transactionBlockMessage
 	_, err := txMsg.UnmarshalMsg(message)
 	if err != nil {

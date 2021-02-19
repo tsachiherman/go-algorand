@@ -69,5 +69,5 @@ func (s *Service) Stop() {
 
 // GetIncomingMessageHandler returns the message handler.
 func (s *Service) GetIncomingMessageHandler() IncomingMessageHandler {
-	return s.state.incomingMessageHandler
+	return s.state.asyncIncomingMessageHandler
 }

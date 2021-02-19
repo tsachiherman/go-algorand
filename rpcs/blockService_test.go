@@ -37,7 +37,7 @@ func (mup *mockUnicastPeer) Unicast(ctx context.Context, data []byte, tag protoc
 	return nil
 }
 func (mup *mockUnicastPeer) Version() string {
-	return "2.1"
+	return network.ProtocolVersion
 }
 func (mup *mockUnicastPeer) Request(ctx context.Context, tag network.Tag, topics network.Topics) (resp *network.Response, e error) {
 	return nil, nil
