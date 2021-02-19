@@ -24,6 +24,7 @@ import (
 
 var errInvalidBloomFilterEncoding = errors.New("invalid bloom filter encoding")
 
+//msgp:ignore bloomFilterTypes
 type bloomFilterTypes byte
 
 const (

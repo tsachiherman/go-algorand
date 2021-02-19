@@ -43,7 +43,7 @@ type syncState struct {
 	scheduler                  peerScheduler
 	interruptablePeers         map[*Peer]bool
 	incomingMessagesCh         chan incomingMessage
-	outgoingMessagesCallbackCh chan messageSentCallback
+	outgoingMessagesCallbackCh chan *messageSentCallback
 }
 
 func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
@@ -51,7 +51,7 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 
 	s.interruptablePeers = make(map[*Peer]bool)
 	s.incomingMessagesCh = make(chan incomingMessage, 1024)
-	s.outgoingMessagesCallbackCh = make(chan messageSentCallback, 1024)
+	s.outgoingMessagesCallbackCh = make(chan *messageSentCallback, 1024)
 	s.scheduler.node = s.node
 	s.lastBeta = s.beta(0)
 	startRound := s.node.CurrentRound()
@@ -78,7 +78,9 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 		case <-nextSyncCh:
 			s.evaluateSendingMessages(nextSync)
 		case incomingMsg := <-s.incomingMessagesCh:
-			s.evaluateIncomingMessages(incomingMsg)
+			s.evaluateIncomingMessage(incomingMsg)
+		case msgSent := <-s.outgoingMessagesCallbackCh:
+			s.evaluateOutgoingMessage(msgSent)
 		case <-serviceCtx.Done():
 			return
 		}

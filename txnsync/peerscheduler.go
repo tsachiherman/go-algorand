@@ -21,6 +21,7 @@ import (
 	"time"
 )
 
+//msgp:ignore peerBuckets
 type peerBuckets []peerBucket
 
 type peerScheduler struct {
@@ -28,6 +29,7 @@ type peerScheduler struct {
 	node  NodeConnector
 }
 
+//msgp:ignore peerBucket
 type peerBucket struct {
 	peer *Peer
 	next time.Duration

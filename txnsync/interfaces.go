@@ -43,7 +43,7 @@ type Event struct {
 type IncomingMessageHandler func(networkPeer interface{}, peer *Peer, message []byte, sequenceNumber uint64) error
 
 // SendMessageCallback define a message sent feedback for performing message tracking
-type SendMessageCallback func(enqueued bool, sequenceNumber uint32)
+type SendMessageCallback func(enqueued bool, sequenceNumber uint64)
 
 // NodeConnector is used by the transaction sync for communicating with components external to the txnsync package.
 type NodeConnector interface {
@@ -52,6 +52,7 @@ type NodeConnector interface {
 	Clock() timers.WallClock
 	Random(uint64) uint64
 	GetPeers() ([]*Peer, []interface{})
+	GetPeer(interface{}) *Peer // get a single peer given a network peer opaque interface
 	UpdatePeers([]*Peer, []interface{})
 	SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback)
 	GetPendingTransactionGroups() [][]transactions.SignedTxn

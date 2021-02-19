@@ -59,7 +59,7 @@ type packedTransactionGroups struct {
 type timingParams struct {
 	_struct struct{} `codec:",omitempty,omitemptyarray"`
 
-	refTxnBlockMsgSeq   uint32   `codec:"s"`
+	refTxnBlockMsgSeq   uint64   `codec:"s"`
 	responseElapsedTime uint64   `codec:"r"`
 	acceptedMsgSeq      []uint32 `codec:"a"`
 	nextMsgMinDelay     uint64   `codec:"m"`

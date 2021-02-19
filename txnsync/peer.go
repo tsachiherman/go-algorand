@@ -24,10 +24,14 @@ import (
 	"github.com/algorand/go-algorand/protocol"
 )
 
+//msgp:ignore peerState
 type peerState int
 
 const maxIncomingBloomFilterHistory = 20
 const recentTransactionsSentBufferLength = 10000
+const minDataExchangeRateThreshold = 100 * 1024        // 100KB/s, which is ~0.8Mbps
+const maxDataExchangeRateThreshold = 100 * 1024 * 1024 // 100Mbps
+const defaultDataExchangeRateThreshold = minDataExchangeRateThreshold
 
 const (
 	// peerStateStartup is before the timeout for the sending the first message to the peer has reached
@@ -55,34 +59,50 @@ type Peer struct {
 	recentIncomingBloomFilters []bloomFilter
 	recentSentTransactions     *transactionLru
 
-	// these two fields describe "what the other peer want us to send it"
+	// these two fields describe "what does that peer asked us to send it"
 	requestedTransactionsModulator byte
 	requestedTransactionsOffset    byte
+
+	lastSentMessageSequenceNumber uint64
+	lastSentMessageRound          basics.Round
+	lastSentMessageTimestamp      time.Duration
+	lastSentMessageSize           int
+
+	dataExchangeRate uint64 // the combined upload/download rate in bytes/second
 }
 
 func makePeer(networkPeer interface{}) *Peer {
 	return &Peer{
 		networkPeer:            networkPeer,
 		recentSentTransactions: makeTransactionLru(recentTransactionsSentBufferLength),
+		dataExchangeRate:       defaultDataExchangeRateThreshold,
 	}
 }
 
-// GetUploadRate return the peer upload rate in bytes/sec, based on recent recieved packets.
-func (p *Peer) getUploadRate() int64 {
-	return 2 * 1024 * 1024 / 8 // dummy default of 2Mbit/sec.
-}
+func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn, sendWindow time.Duration, round basics.Round) (selectedTxns [][]transactions.SignedTxn, selectedTxnIDs []transactions.Txid) {
+	// if peer is too far back, don't send it any transactions ( or if the peer is not interested in transactions )
+	if p.lastRound < round.SubSaturate(1) || p.requestedTransactionsModulator == 0 {
+		return nil, nil
+	}
 
-func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn, sendWindow time.Duration) (selectedTxns [][]transactions.SignedTxn, selectedTxnIDs []transactions.Txid) {
-	windowLengthBytes := int(int64(sendWindow) * p.getUploadRate() / int64(time.Second))
+	windowLengthBytes := int(uint64(sendWindow) * p.dataExchangeRate / uint64(time.Second))
 
 	accumulatedSize := 0
 	selectedTxnIDs = make([]transactions.Txid, 0, len(pendingMessages))
 	for grpIdx := range pendingMessages {
-		// todo - filter out transactions that we already previously sent.
+		// filter out transactions that we already previously sent.
 		txID := pendingMessages[grpIdx][0].ID()
 		if p.recentSentTransactions.contained(txID) {
 			// we already sent that transaction. no need to send again.
 			continue
+		}
+
+		// check if the peer would be interested in these messages -
+		if p.requestedTransactionsModulator > 1 {
+			txidValue := uint64(txID[0]) + (uint64(txID[1]) << 8) + (uint64(txID[2]) << 16) + (uint64(txID[3]) << 24) + (uint64(txID[4]) << 32) + (uint64(txID[5]) << 40) + (uint64(txID[6]) << 48) + (uint64(txID[7]) << 56)
+			if txidValue%uint64(p.requestedTransactionsModulator) != uint64(p.requestedTransactionsOffset) {
+				continue
+			}
 		}
 
 		selectedTxns = append(selectedTxns, pendingMessages[grpIdx])
@@ -113,13 +133,34 @@ func (p *Peer) updateRequestParams(modulator, offset byte) {
 	p.requestedTransactionsModulator, p.requestedTransactionsOffset = modulator, offset
 }
 
-func (p *Peer) updateIncomingMessageTiming(timings timingParams) {
-	p.lastConfirmedMessageSeqReceived = uint64(timings.refTxnBlockMsgSeq)
+func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound basics.Round, currentTime time.Duration, incomingMessageSize int) {
+	p.lastConfirmedMessageSeqReceived = timings.refTxnBlockMsgSeq
+	// if we received a message that references our privious message, see if they occured on the same round
+	if p.lastConfirmedMessageSeqReceived == p.lastSentMessageSequenceNumber && p.lastSentMessageRound == currentRound {
+		// if so, we migth be able to calculate the bandwidth.
+		timeSinceLastMessageWasSent := currentTime - p.lastSentMessageTimestamp
+		if timeSinceLastMessageWasSent > time.Duration(timings.responseElapsedTime) {
+			networkTrasmitTime := timeSinceLastMessageWasSent - time.Duration(timings.responseElapsedTime)
+			networkMessageSize := uint64(p.lastSentMessageSize + incomingMessageSize)
+			dataExchangeRate := uint64(time.Second) * networkMessageSize / uint64(networkTrasmitTime)
+			if dataExchangeRate < minDataExchangeRateThreshold {
+				dataExchangeRate = minDataExchangeRateThreshold
+			} else if dataExchangeRate > maxDataExchangeRateThreshold {
+				dataExchangeRate = maxDataExchangeRateThreshold
+			}
+			// clamp data exchange rate to realistic metrics
+			p.dataExchangeRate = dataExchangeRate
+		}
+	}
 }
 
 // update the peer once the message was sent successfully.
-func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs []transactions.Txid) {
+func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs []transactions.Txid, timestamp time.Duration, sequenceNumber uint64, messageSize int) {
 	for _, txid := range selectedTxnIDs {
 		p.recentSentTransactions.add(txid)
 	}
+	p.lastSentMessageSequenceNumber = sequenceNumber
+	p.lastSentMessageRound = txMsg.round
+	p.lastSentMessageTimestamp = timestamp
+	p.lastSentMessageSize = messageSize
 }

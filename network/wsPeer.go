@@ -71,7 +71,6 @@ var defaultSendMessageTags = map[protocol.Tag]bool{
 	protocol.ProposalPayloadTag: true,
 	protocol.TopicMsgRespTag:    true,
 	protocol.MsgOfInterestTag:   true,
-	protocol.TxnTag:             true,
 	protocol.UniCatchupReqTag:   true,
 	protocol.UniEnsBlockReqTag:  true,
 	protocol.VoteBundleTag:      true,
@@ -340,6 +339,17 @@ func (wp *wsPeer) init(config config.Local, sendBufferLength int) {
 
 	if config.EnableOutgoingNetworkMessageFiltering {
 		wp.outgoingMsgFilter = makeMessageFilter(config.OutgoingMessageFilterBucketCount, config.OutgoingMessageFilterBucketSize)
+	}
+
+	// if we're on an older version, then add the old style transaction message to the send messages tag.
+	// once we deprecate old style transaction sending, this part can go away.
+	if wp.version != "2.5" {
+		txSendMsgTags := make(map[protocol.Tag]bool)
+		for tag := range wp.sendMessageTag {
+			txSendMsgTags[tag] = true
+		}
+		txSendMsgTags[protocol.TxnTag] = true
+		wp.sendMessageTag = txSendMsgTags
 	}
 
 	wp.wg.Add(2)

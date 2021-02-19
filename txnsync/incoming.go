@@ -27,6 +27,7 @@ type incomingMessage struct {
 	message        transactionBlockMessage
 	sequenceNumber uint64
 	peer           *Peer
+	encodedSize    int
 }
 
 // incomingMessageHandler
@@ -46,7 +47,7 @@ func (s *syncState) asyncIncomingMessageHandler(networkPeer interface{}, peer *P
 		// if we don't have a peer, then we need to enqueue this task to be handled by the main loop since we want to ensure that
 		// all the peer objects are created syncroniously.
 		select {
-		case s.incomingMessagesCh <- incomingMessage{networkPeer: networkPeer, message: txMsg, sequenceNumber: sequenceNumber}:
+		case s.incomingMessagesCh <- incomingMessage{networkPeer: networkPeer, message: txMsg, sequenceNumber: sequenceNumber, encodedSize: len(message)}:
 		default:
 			// todo - handle the case where we can't write to the channel.
 		}
@@ -58,18 +59,24 @@ func (s *syncState) asyncIncomingMessageHandler(networkPeer interface{}, peer *P
 	}
 
 	select {
-	case s.incomingMessagesCh <- incomingMessage{peer: peer}:
+	case s.incomingMessagesCh <- incomingMessage{peer: peer, encodedSize: len(message)}:
 	default:
 		// todo - handle the case where we can't write to the channel.
 	}
 	return nil
 }
 
-func (s *syncState) evaluateIncomingMessages(message incomingMessage) {
+func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 	peer := message.peer
 	if peer == nil {
-		// we couldn't really do much about this message previously, since we didn't have the peer.
-		peer := makePeer(message.networkPeer)
+		// check if a peer was created already for this network peer object.
+		peer = s.node.GetPeer(message.networkPeer)
+		if peer == nil {
+			// we couldn't really do much about this message previously, since we didn't have the peer.
+			peer = makePeer(message.networkPeer)
+			// let the network peer object know about our peer
+			s.node.UpdatePeers([]*Peer{peer}, []interface{}{message.networkPeer})
+		}
 		err := peer.incomingMessages.enqueue(message.message, message.sequenceNumber)
 		if err != nil {
 			// this is not really likely, since we won't saturate the peer heap right after creating it..
@@ -107,7 +114,7 @@ func (s *syncState) evaluateIncomingMessages(message incomingMessage) {
 		}
 	}
 	peer.updateRequestParams(txMsg.updatedRequestParams.modulator, txMsg.updatedRequestParams.offset)
-	peer.updateIncomingMessageTiming(txMsg.msgSync)
+	peer.updateIncomingMessageTiming(txMsg.msgSync, s.round, s.node.Clock().Since(), message.encodedSize)
 
 	// if the peer's round is more than a single round behind the local node, then we don't want to
 	// try and load the transactions. The other peer should first catch up before getting transactions.

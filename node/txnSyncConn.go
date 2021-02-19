@@ -64,6 +64,10 @@ func (tsnc *transcationSyncNodeConnector) Clock() timers.WallClock {
 	return tsnc.clock
 }
 
+func (tsnc *transcationSyncNodeConnector) GetPeer(networkPeer interface{}) *txnsync.Peer {
+	return tsnc.node.net.GetPeerData(networkPeer, "txsync").(*txnsync.Peer)
+}
+
 func (tsnc *transcationSyncNodeConnector) GetPeers() (txsyncPeers []*txnsync.Peer, netPeers []interface{}) {
 	networkPeers := tsnc.node.net.GetPeers(network.PeersConnectedOut, network.PeersConnectedIn)
 	txsyncPeers = make([]*txnsync.Peer, len(networkPeers))
@@ -99,7 +103,7 @@ func (tsnc *transcationSyncNodeConnector) SendPeerMessage(netPeer interface{}, m
 		return
 	}
 	if err := unicastPeer.Unicast(msg, protocol.Txn2Tag, func(enqueued bool, sequenceNumber uint64) {
-		callback(enqueued, uint32(sequenceNumber))
+		callback(enqueued, sequenceNumber)
 	}); err != nil {
 		callback(false, 0)
 		return

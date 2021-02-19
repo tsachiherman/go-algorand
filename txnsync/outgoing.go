@@ -30,18 +30,20 @@ type messageSentCallback struct {
 	peer                *Peer
 	state               *syncState
 	sentTimestamp       time.Duration
+	sequenceNumber      uint64
 }
 
 // asyncMessageSent called via the network package to inform the txsync that a message was enqueued, and the associated sequence number.
-func (msc *messageSentCallback) asyncMessageSent(enqueued bool, sequenceNumber uint32) {
+func (msc *messageSentCallback) asyncMessageSent(enqueued bool, sequenceNumber uint64) {
 	if !enqueued {
 		return
 	}
 	// record the timestamp here, before placing the entry on the queue
 	msc.sentTimestamp = msc.state.node.Clock().Since()
+	msc.sequenceNumber = sequenceNumber
 
 	select {
-	case msc.state.outgoingMessagesCallbackCh <- *msc:
+	case msc.state.outgoingMessagesCallbackCh <- msc:
 	default:
 		// if we can't place it on the channel, just let it drop and log it.
 	}
@@ -58,12 +60,6 @@ func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 		msgCallback := &messageSentCallback{peer: peer}
 		encodedMessage, msgCallback.sentMessage, msgCallback.sentTranscationsIDs = s.assemblePeerMessage(peer, pendingTransactionGroups)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
-		/*if err == nil {
-			// if we successfully sent the message, we should make note of that on the peer.
-			peer.updateMessageSent(txMsg, TxnIDs)
-
-			//s.logPeerMessageSent(peer, peerMsg)
-		}*/
 
 		if ctx.Err() != nil {
 			// we ran out of time sending messages, stop sending any more messages.
@@ -83,11 +79,12 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transact
 		// todo - fill UpdatedRequestParams
 	}
 
-	//peerUploadRate := peer.GetUploadRate()
 	//windowDuration = 20 * time.Millisecond
-	//windowMessageLength := windowDuration * peerUploadRate / time.Second
-	txMsg.transactionGroups.transactionsGroup, sentTxIDs = peer.selectPendingMessages(pendingMessages, 20*time.Millisecond)
-	//txMsg.msgSync.
+	txMsg.transactionGroups.transactionsGroup, sentTxIDs = peer.selectPendingMessages(pendingMessages, 20*time.Millisecond, s.round)
 
 	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
+}
+
+func (s *syncState) evaluateOutgoingMessage(msg *messageSentCallback) {
+	msg.peer.updateMessageSent(msg.sentMessage, msg.sentTranscationsIDs, msg.sentTimestamp, msg.sequenceNumber, msg.encodedMessageSize)
 }
