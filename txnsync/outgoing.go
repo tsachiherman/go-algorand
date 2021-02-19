@@ -31,9 +31,12 @@ func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
 
 	for _, peer := range peers {
-		encodedMsg, _ := s.assemblePeerMessage(peer, pendingTransactionGroups)
+		encodedMsg, txMsg, TxnIDs := s.assemblePeerMessage(peer, pendingTransactionGroups)
 		err := s.node.SendPeerMessage(peer.networkPeer, encodedMsg)
 		if err == nil {
+			// if we successfully sent the message, we should make note of that on the peer.
+			peer.updateMessageSent(txMsg, TxnIDs)
+
 			//s.logPeerMessageSent(peer, peerMsg)
 		}
 
@@ -44,8 +47,8 @@ func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 	}
 }
 
-func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transactions.SignedTxn) ([]byte, *transactionBlockMessage) {
-	txMsg := transactionBlockMessage{
+func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transactions.SignedTxn) (encodedMessage []byte, txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid) {
+	txMsg = &transactionBlockMessage{
 		version: txnBlockMessageVersion,
 		round:   s.round,
 	}
@@ -58,8 +61,8 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transact
 	//peerUploadRate := peer.GetUploadRate()
 	//windowDuration = 20 * time.Millisecond
 	//windowMessageLength := windowDuration * peerUploadRate / time.Second
-	txMsg.transactionGroups.transactionsGroup = peer.selectPendingMessages(pendingMessages, 20*time.Millisecond)
+	txMsg.transactionGroups.transactionsGroup, sentTxIDs = peer.selectPendingMessages(pendingMessages, 20*time.Millisecond)
 	//txMsg.msgSync.
 
-	return txMsg.MarshalMsg([]byte{}), &txMsg
+	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
 }

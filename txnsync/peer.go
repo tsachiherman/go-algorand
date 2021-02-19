@@ -27,6 +27,7 @@ import (
 type peerState int
 
 const maxIncomingBloomFilterHistory = 20
+const recentTransactionsSentBufferLength = 10000
 
 const (
 	// peerStateStartup is before the timeout for the sending the first message to the peer has reached
@@ -52,14 +53,17 @@ type Peer struct {
 	lastConfirmedMessageSeqReceived uint64
 
 	recentIncomingBloomFilters []bloomFilter
+	recentSentTransactions     *transactionLru
 
+	// these two fields describe "what the other peer want us to send it"
 	requestedTransactionsModulator byte
 	requestedTransactionsOffset    byte
 }
 
 func makePeer(networkPeer interface{}) *Peer {
 	return &Peer{
-		networkPeer: networkPeer,
+		networkPeer:            networkPeer,
+		recentSentTransactions: makeTransactionLru(recentTransactionsSentBufferLength),
 	}
 }
 
@@ -68,14 +72,23 @@ func (p *Peer) getUploadRate() int64 {
 	return 2 * 1024 * 1024 / 8 // dummy default of 2Mbit/sec.
 }
 
-func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn, sendWindow time.Duration) (selectedTxns [][]transactions.SignedTxn) {
+func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn, sendWindow time.Duration) (selectedTxns [][]transactions.SignedTxn, selectedTxnIDs []transactions.Txid) {
 	windowLengthBytes := int(int64(sendWindow) * p.getUploadRate() / int64(time.Second))
 
 	accumulatedSize := 0
+	selectedTxnIDs = make([]transactions.Txid, 0, len(pendingMessages))
 	for grpIdx := range pendingMessages {
 		// todo - filter out transactions that we already previously sent.
-		selectedTxns = append(selectedTxns, pendingMessages[grpIdx])
+		txID := pendingMessages[grpIdx][0].ID()
+		if p.recentSentTransactions.contained(txID) {
+			// we already sent that transaction. no need to send again.
+			continue
+		}
 
+		selectedTxns = append(selectedTxns, pendingMessages[grpIdx])
+		selectedTxnIDs = append(selectedTxnIDs, txID)
+
+		// calculate the total size of the transaction group.
 		for txidx := range pendingMessages[grpIdx] {
 			encodingBuf := protocol.GetEncodingBuf()
 			accumulatedSize += len(pendingMessages[grpIdx][txidx].MarshalMsg(encodingBuf))
@@ -86,7 +99,7 @@ func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn,
 		}
 	}
 
-	return selectedTxns
+	return selectedTxns, selectedTxnIDs
 }
 
 func (p *Peer) addIncomingBloomFilter(bf bloomFilter) {
@@ -102,4 +115,11 @@ func (p *Peer) updateRequestParams(modulator, offset byte) {
 
 func (p *Peer) updateIncomingMessageTiming(timings timingParams) {
 	p.lastConfirmedMessageSeqReceived = uint64(timings.refTxnBlockMsgSeq)
+}
+
+// update the peer once the message was sent successfully.
+func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs []transactions.Txid) {
+	for _, txid := range selectedTxnIDs {
+		p.recentSentTransactions.add(txid)
+	}
 }
