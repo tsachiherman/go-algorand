@@ -29,8 +29,9 @@ var errHeapReachedCapacity = errors.New("message ordering heap reached capacity"
 const messageOrderingHeapLimit = 128
 
 type messageHeapItem struct {
-	blockMsg       transactionBlockMessage
-	sequenceNumber uint64
+	blockMsg              transactionBlockMessage
+	encodedBlockMsgLength int
+	sequenceNumber        uint64
 }
 
 type messageOrderingHeap struct {
@@ -68,13 +69,13 @@ func (p *messageOrderingHeap) Less(i, j int) bool {
 	return p.messages[i].sequenceNumber < p.messages[j].sequenceNumber
 }
 
-func (p *messageOrderingHeap) enqueue(blockMsg transactionBlockMessage, sequenceNumber uint64) error {
+func (p *messageOrderingHeap) enqueue(blockMsg transactionBlockMessage, sequenceNumber uint64, encodedBlockMsgLength int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.messages) > messageOrderingHeapLimit {
 		return errHeapReachedCapacity
 	}
-	heap.Push(p, messageHeapItem{blockMsg: blockMsg, sequenceNumber: sequenceNumber})
+	heap.Push(p, messageHeapItem{blockMsg: blockMsg, sequenceNumber: sequenceNumber, encodedBlockMsgLength: encodedBlockMsgLength})
 	return nil
 }
 
@@ -87,12 +88,12 @@ func (p *messageOrderingHeap) peekSequence() (sequenceNumber uint64, err error) 
 	return p.messages[0].sequenceNumber, nil
 }
 
-func (p *messageOrderingHeap) pop() (blockMsg transactionBlockMessage, err error) {
+func (p *messageOrderingHeap) pop() (blockMsg transactionBlockMessage, encodedBlockMsgLength int, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.messages) == 0 {
-		return transactionBlockMessage{}, errHeapEmpty
+		return transactionBlockMessage{}, 0, errHeapEmpty
 	}
 	entry := heap.Pop(p).(messageHeapItem)
-	return entry.blockMsg, nil
+	return entry.blockMsg, entry.encodedBlockMsgLength, nil
 }

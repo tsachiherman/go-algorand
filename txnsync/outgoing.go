@@ -18,10 +18,13 @@ package txnsync
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/algorand/go-algorand/data/transactions"
 )
+
+var _ = fmt.Printf
 
 const messageTimeWindow = 20 * time.Millisecond
 
@@ -59,10 +62,9 @@ func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
 	var encodedMessage []byte
 	for _, peer := range peers {
-		msgCallback := &messageSentCallback{peer: peer}
+		msgCallback := &messageSentCallback{peer: peer, state: s}
 		encodedMessage, msgCallback.sentMessage, msgCallback.sentTranscationsIDs = s.assemblePeerMessage(peer, pendingTransactionGroups)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
-
 		if ctx.Err() != nil {
 			// we ran out of time sending messages, stop sending any more messages.
 			break
@@ -72,23 +74,28 @@ func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 
 func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transactions.SignedTxn) (encodedMessage []byte, txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid) {
 	txMsg = &transactionBlockMessage{
-		version: txnBlockMessageVersion,
-		round:   s.round,
+		Version: txnBlockMessageVersion,
+		Round:   s.round,
 	}
 
 	if s.fetchTransactions {
 		// update the UpdatedRequestParams
 		offset, modulator := peer.getLocalRequestParams()
-		txMsg.updatedRequestParams.modulator = modulator
+		txMsg.UpdatedRequestParams.Modulator = modulator
 		if modulator > 0 {
-			txMsg.updatedRequestParams.offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
+			txMsg.UpdatedRequestParams.Offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
 		}
 		// generate a bloom filter that matches the requests params.
-		bloomFilter := makeBloomFilter(txMsg.updatedRequestParams, pendingMessages, uint32(s.node.Random(0xffffffff)))
-		txMsg.txnBloomFilter = bloomFilter.encode()
+		bloomFilter := makeBloomFilter(txMsg.UpdatedRequestParams, pendingMessages, uint32(s.node.Random(0xffffffff)))
+		txMsg.TxnBloomFilter = bloomFilter.encode()
 	}
 
-	txMsg.transactionGroups.transactionsGroup, sentTxIDs = peer.selectPendingMessages(pendingMessages, messageTimeWindow, s.round)
+	var txnGroups [][]transactions.SignedTxn
+	txnGroups, sentTxIDs = peer.selectPendingMessages(pendingMessages, messageTimeWindow, s.round)
+	if len(txnGroups) > 0 {
+		fmt.Printf("sent transactions groups %d\n", len(txnGroups))
+	}
+	txMsg.TransactionGroups.bytes = encodeTransactionGroups(txnGroups)
 
 	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
 }

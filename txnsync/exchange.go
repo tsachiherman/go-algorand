@@ -18,49 +18,51 @@ package txnsync
 
 import (
 	"github.com/algorand/go-algorand/data/basics"
-	"github.com/algorand/go-algorand/data/transactions"
 )
 
 const txnBlockMessageVersion = 1
+const maxBloomFilterSize = 100000
+const maxAcceptedMsgSeq = 64
+const maxEncodedTransactionGroupBytes = 10000000
 
 type transactionBlockMessage struct {
 	_struct struct{} `codec:",omitempty,omitemptyarray"`
 
-	version              int                     `codec:"v"`
-	round                basics.Round            `codec:"r"`
-	txnBloomFilter       encodedBloomFilter      `codec:"b"`
-	updatedRequestParams requestParams           `codec:"p"`
-	transactionGroups    packedTransactionGroups `codec:"g"`
-	msgSync              timingParams            `codec:"t"`
+	Version              int32                   `codec:"v"`
+	Round                basics.Round            `codec:"r"`
+	TxnBloomFilter       encodedBloomFilter      `codec:"b"`
+	UpdatedRequestParams requestParams           `codec:"p"`
+	TransactionGroups    packedTransactionGroups `codec:"g"`
+	MsgSync              timingParams            `codec:"t"`
 }
 
 type encodedBloomFilter struct {
 	_struct struct{} `codec:",omitempty,omitemptyarray"`
 
-	bloomFilterType byte          `codec:"t"`
-	encodingParams  requestParams `codec:"p"`
-	shuffler        byte          `codec:"s"`
-	bloomFilter     []byte        `codec:"f"`
+	BloomFilterType byte          `codec:"t"`
+	EncodingParams  requestParams `codec:"p"`
+	Shuffler        byte          `codec:"s"`
+	BloomFilter     []byte        `codec:"f,allocbound=maxBloomFilterSize"`
 }
 
 type requestParams struct {
 	_struct struct{} `codec:",omitempty,omitemptyarray"`
 
-	offset    byte `codec:"o"`
-	modulator byte `codec:"m"`
+	Offset    byte `codec:"o"`
+	Modulator byte `codec:"m"`
 }
 
 type packedTransactionGroups struct {
 	_struct struct{} `codec:",omitempty,omitemptyarray"`
 
-	transactionsGroup [][]transactions.SignedTxn `codec:"g"`
+	bytes []byte `codec:"g,allocbound=maxEncodedTransactionGroupBytes"`
 }
 
 type timingParams struct {
 	_struct struct{} `codec:",omitempty,omitemptyarray"`
 
-	refTxnBlockMsgSeq   uint64   `codec:"s"`
-	responseElapsedTime uint64   `codec:"r"`
-	acceptedMsgSeq      []uint32 `codec:"a"`
-	nextMsgMinDelay     uint64   `codec:"m"`
+	RefTxnBlockMsgSeq   uint64   `codec:"s"`
+	ResponseElapsedTime uint64   `codec:"r"`
+	AcceptedMsgSeq      []uint32 `codec:"a,allocbound=maxAcceptedMsgSeq"`
+	NextMsgMinDelay     uint64   `codec:"m"`
 }

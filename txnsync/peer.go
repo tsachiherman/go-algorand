@@ -138,13 +138,13 @@ func (p *Peer) updateRequestParams(modulator, offset byte) {
 }
 
 func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound basics.Round, currentTime time.Duration, incomingMessageSize int) {
-	p.lastConfirmedMessageSeqReceived = timings.refTxnBlockMsgSeq
+	p.lastConfirmedMessageSeqReceived = timings.RefTxnBlockMsgSeq
 	// if we received a message that references our privious message, see if they occured on the same round
 	if p.lastConfirmedMessageSeqReceived == p.lastSentMessageSequenceNumber && p.lastSentMessageRound == currentRound {
 		// if so, we migth be able to calculate the bandwidth.
 		timeSinceLastMessageWasSent := currentTime - p.lastSentMessageTimestamp
-		if timeSinceLastMessageWasSent > time.Duration(timings.responseElapsedTime) {
-			networkTrasmitTime := timeSinceLastMessageWasSent - time.Duration(timings.responseElapsedTime)
+		if timeSinceLastMessageWasSent > time.Duration(timings.ResponseElapsedTime) {
+			networkTrasmitTime := timeSinceLastMessageWasSent - time.Duration(timings.ResponseElapsedTime)
 			networkMessageSize := uint64(p.lastSentMessageSize + incomingMessageSize)
 			dataExchangeRate := uint64(time.Second) * networkMessageSize / uint64(networkTrasmitTime)
 			if dataExchangeRate < minDataExchangeRateThreshold {
@@ -164,7 +164,7 @@ func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs 
 		p.recentSentTransactions.add(txid)
 	}
 	p.lastSentMessageSequenceNumber = sequenceNumber
-	p.lastSentMessageRound = txMsg.round
+	p.lastSentMessageRound = txMsg.Round
 	p.lastSentMessageTimestamp = timestamp
 	p.lastSentMessageSize = messageSize
 }

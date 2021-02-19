@@ -43,13 +43,13 @@ type bloomFilter struct {
 }
 
 func decodeBloomFilter(enc encodedBloomFilter) (outFilter bloomFilter, err error) {
-	switch bloomFilterTypes(enc.bloomFilterType) {
+	switch bloomFilterTypes(enc.BloomFilterType) {
 	case multiHashBloomFilter:
 	default:
 		return bloomFilter{}, errInvalidBloomFilterEncoding
 	}
 
-	outFilter.filter, err = bloom.UnmarshalBinary(enc.bloomFilter)
+	outFilter.filter, err = bloom.UnmarshalBinary(enc.BloomFilter)
 	if err != nil {
 		return bloomFilter{}, err
 	}
@@ -57,9 +57,9 @@ func decodeBloomFilter(enc encodedBloomFilter) (outFilter bloomFilter, err error
 }
 
 func (bf *bloomFilter) encode() (out encodedBloomFilter) {
-	out.bloomFilterType = byte(multiHashBloomFilter)
-	out.encodingParams = bf.encodingParams
-	out.bloomFilter, _ = bf.filter.MarshalBinary()
+	out.BloomFilterType = byte(multiHashBloomFilter)
+	out.EncodingParams = bf.encodingParams
+	out.BloomFilter, _ = bf.filter.MarshalBinary()
 	return
 }
 
@@ -67,10 +67,10 @@ func makeBloomFilter(encodingParams requestParams, txnGroups [][]transactions.Si
 	result.encodingParams = encodingParams
 	var filtedTransactionsIDs []transactions.Txid
 	switch {
-	case encodingParams.modulator == 0:
+	case encodingParams.Modulator == 0:
 		// we want none.
 		return
-	case encodingParams.modulator == 1:
+	case encodingParams.Modulator == 1:
 		// we want all.
 		filtedTransactionsIDs = make([]transactions.Txid, 0, len(txnGroups))
 		for _, group := range txnGroups {
@@ -82,7 +82,7 @@ func makeBloomFilter(encodingParams requestParams, txnGroups [][]transactions.Si
 		for _, group := range txnGroups {
 			txID := group[0].ID()
 			txidValue := uint64(txID[0]) + (uint64(txID[1]) << 8) + (uint64(txID[2]) << 16) + (uint64(txID[3]) << 24) + (uint64(txID[4]) << 32) + (uint64(txID[5]) << 40) + (uint64(txID[6]) << 48) + (uint64(txID[7]) << 56)
-			if txidValue%uint64(encodingParams.modulator) != uint64(encodingParams.offset) {
+			if txidValue%uint64(encodingParams.Modulator) != uint64(encodingParams.Offset) {
 				continue
 			}
 			filtedTransactionsIDs = append(filtedTransactionsIDs, txID)

@@ -18,6 +18,7 @@
 package node
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/algorand/go-algorand/data"
@@ -65,7 +66,11 @@ func (tsnc *transcationSyncNodeConnector) Clock() timers.WallClock {
 }
 
 func (tsnc *transcationSyncNodeConnector) GetPeer(networkPeer interface{}) *txnsync.Peer {
-	return tsnc.node.net.GetPeerData(networkPeer, "txsync").(*txnsync.Peer)
+	peerData := tsnc.node.net.GetPeerData(networkPeer, "txsync")
+	if peerData == nil {
+		return nil
+	}
+	return peerData.(*txnsync.Peer)
 }
 
 func (tsnc *transcationSyncNodeConnector) GetPeers() (txsyncPeers []*txnsync.Peer, netPeers []interface{}) {
@@ -84,7 +89,10 @@ func (tsnc *transcationSyncNodeConnector) GetPeers() (txsyncPeers []*txnsync.Pee
 		}
 
 		netPeers[k] = networkPeers[i]
-		txsyncPeers[k] = tsnc.node.net.GetPeerData(networkPeers[i], "txsync").(*txnsync.Peer)
+		peerData := tsnc.node.net.GetPeerData(networkPeers[i], "txsync")
+		if peerData != nil {
+			txsyncPeers[k] = peerData.(*txnsync.Peer)
+		}
 		k++
 	}
 
@@ -119,6 +127,7 @@ func (tsnc *transcationSyncNodeConnector) onNewTransactionPoolEntry(transcationP
 	case tsnc.eventsCh <- txnsync.MakeTranscationPoolChangeEvent(transcationPoolSize):
 	default:
 	}
+	fmt.Printf("onNewTransactionPoolEntry %d\n", transcationPoolSize)
 }
 
 func (tsnc *transcationSyncNodeConnector) onNewRound(round basics.Round, hasParticipationKeys bool) {
@@ -152,9 +161,13 @@ func (tsnc *transcationSyncNodeConnector) Handle(raw network.IncomingMessage) ne
 			}
 		}
 	}
-	peerData := tsnc.node.net.GetPeerData(raw.Sender, "txsync").(*txnsync.Peer)
+	var peer *txnsync.Peer
+	peerData := tsnc.node.net.GetPeerData(raw.Sender, "txsync")
+	if peerData != nil {
+		peer = peerData.(*txnsync.Peer)
+	}
 
-	err := tsnc.messageHandler(raw.Sender, peerData, raw.Data, raw.Sequence)
+	err := tsnc.messageHandler(raw.Sender, peer, raw.Data, raw.Sequence)
 	if err == nil {
 		return network.OutgoingMessage{
 			Action: network.Ignore,
