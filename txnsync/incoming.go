@@ -81,7 +81,7 @@ func (s *syncState) evaluateIncomingMessages(message incomingMessage) {
 		// this is not really likely, since we just enqueued an entry and all the "dequeuing" is done on this go-routine.
 		return
 	}
-	if seq != peer.nextMessageSeq {
+	if seq != peer.nextReceivedMessageSeq {
 		// if we recieve a message which wasn't in-order, just let it go.
 		return
 	}
@@ -90,8 +90,29 @@ func (s *syncState) evaluateIncomingMessages(message incomingMessage) {
 		// if the queue is empty ( not expected, since we peek'ed into it before ), then we can't do much here.
 		return
 	}
+
+	// increase the message sequence number, since we're processing this message.
+	peer.nextReceivedMessageSeq++
+
+	// update the round number if needed.
 	if txMsg.round > peer.lastRound {
 		peer.lastRound = txMsg.round
 	}
-	// todo..
+
+	// if the peer sent us a bloom filter, store this.
+	if txMsg.txnBloomFilter.bloomFilterType != 0 {
+		bloomFilter, err := decodeBloomFilter(txMsg.txnBloomFilter)
+		if err == nil {
+			peer.addIncomingBloomFilter(bloomFilter)
+		}
+	}
+	peer.updateRequestParams(txMsg.updatedRequestParams.modulator, txMsg.updatedRequestParams.offset)
+	peer.updateIncomingMessageTiming(txMsg.msgSync)
+
+	// if the peer's round is more than a single round behind the local node, then we don't want to
+	// try and load the transactions. The other peer should first catch up before getting transactions.
+	if (peer.lastRound + 1) < s.round {
+		return
+	}
+	s.node.IncomingTransactionGroups(peer.networkPeer, txMsg.transactionGroups.transactionsGroup)
 }

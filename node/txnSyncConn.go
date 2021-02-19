@@ -21,6 +21,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/algorand/go-algorand/data"
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/transactions"
 	"github.com/algorand/go-algorand/network"
@@ -36,13 +37,15 @@ type transcationSyncNodeConnector struct {
 	eventsCh       chan txnsync.Event
 	clock          timers.WallClock
 	messageHandler txnsync.IncomingMessageHandler
+	txHandler      data.SolicitedTxHandler
 }
 
 func makeTranscationSyncNodeConnector(node *AlgorandFullNode) transcationSyncNodeConnector {
 	return transcationSyncNodeConnector{
-		node:     node,
-		eventsCh: make(chan txnsync.Event, 1),
-		clock:    timers.MakeMonotonicClock(time.Now()),
+		node:      node,
+		eventsCh:  make(chan txnsync.Event, 1),
+		clock:     timers.MakeMonotonicClock(time.Now()),
+		txHandler: node.txHandler.SolicitedTxHandler(),
 	}
 }
 
@@ -156,4 +159,14 @@ func (tsnc *transcationSyncNodeConnector) Handle(raw network.IncomingMessage) ne
 
 func (tsnc *transcationSyncNodeConnector) stop() {
 
+}
+
+func (tsnc *transcationSyncNodeConnector) IncomingTransactionGroups(networkPeer interface{}, txGroups [][]transactions.SignedTxn) {
+	for _, txGroup := range txGroups {
+		if err := tsnc.txHandler.Handle(txGroup); err != nil {
+			// we had some failuire, disconnect from peer.
+			tsnc.node.net.Disconnect(networkPeer)
+			return
+		}
+	}
 }

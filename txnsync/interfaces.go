@@ -52,6 +52,7 @@ type NodeConnector interface {
 	UpdatePeers([]*Peer, []interface{})
 	SendPeerMessage(netPeer interface{}, msg []byte) error
 	GetPendingTransactionGroups() [][]transactions.SignedTxn
+	IncomingTransactionGroups(interface{}, [][]transactions.SignedTxn)
 }
 
 // MakeTranscationPoolChangeEvent creates an event for when a txn pool size has changed.

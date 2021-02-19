@@ -26,6 +26,8 @@ import (
 
 type peerState int
 
+const maxIncomingBloomFilterHistory = 20
+
 const (
 	// peerStateStartup is before the timeout for the sending the first message to the peer has reached
 	peerStateStartup peerState = iota
@@ -45,7 +47,14 @@ type Peer struct {
 	lastRound basics.Round
 
 	incomingMessages messageOrderingHeap
-	nextMessageSeq   uint64
+
+	nextReceivedMessageSeq          uint64
+	lastConfirmedMessageSeqReceived uint64
+
+	recentIncomingBloomFilters []bloomFilter
+
+	requestedTransactionsModulator byte
+	requestedTransactionsOffset    byte
 }
 
 func makePeer(networkPeer interface{}) *Peer {
@@ -78,4 +87,19 @@ func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn,
 	}
 
 	return selectedTxns
+}
+
+func (p *Peer) addIncomingBloomFilter(bf bloomFilter) {
+	p.recentIncomingBloomFilters = append(p.recentIncomingBloomFilters, bf)
+	if len(p.recentIncomingBloomFilters) > maxIncomingBloomFilterHistory {
+		p.recentIncomingBloomFilters = p.recentIncomingBloomFilters[1:]
+	}
+}
+
+func (p *Peer) updateRequestParams(modulator, offset byte) {
+	p.requestedTransactionsModulator, p.requestedTransactionsOffset = modulator, offset
+}
+
+func (p *Peer) updateIncomingMessageTiming(timings timingParams) {
+	p.lastConfirmedMessageSeqReceived = uint64(timings.refTxnBlockMsgSeq)
 }
