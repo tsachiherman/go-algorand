@@ -69,6 +69,10 @@ type Peer struct {
 	lastSentMessageSize           int
 
 	dataExchangeRate uint64 // the combined upload/download rate in bytes/second
+
+	// these two fields describe "what does the local peer want the remote peer to send back"
+	localTransactionsModulator  byte
+	localTransactionsBaseOffset byte
 }
 
 func makePeer(networkPeer interface{}) *Peer {
@@ -163,4 +167,20 @@ func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs 
 	p.lastSentMessageRound = txMsg.round
 	p.lastSentMessageTimestamp = timestamp
 	p.lastSentMessageSize = messageSize
+}
+
+// setLocalRequestParams stores the peer request params.
+func (p *Peer) setLocalRequestParams(offset, modulator uint64) {
+	if modulator > 255 {
+		modulator = 255
+	}
+	p.localTransactionsModulator = byte(modulator)
+	if modulator != 0 {
+		p.localTransactionsBaseOffset = byte(offset % modulator)
+	}
+}
+
+// getLocalRequestParams returns the local requests params
+func (p *Peer) getLocalRequestParams() (offset, modulator byte) {
+	return p.localTransactionsBaseOffset, p.localTransactionsModulator
 }

@@ -44,6 +44,8 @@ type syncState struct {
 	interruptablePeers         map[*Peer]bool
 	incomingMessagesCh         chan incomingMessage
 	outgoingMessagesCallbackCh chan *messageSentCallback
+	nextOffsetRollingCh        <-chan time.Time
+	requestsOffset             uint64
 }
 
 func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
@@ -81,6 +83,8 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 			s.evaluateIncomingMessage(incomingMsg)
 		case msgSent := <-s.outgoingMessagesCallbackCh:
 			s.evaluateOutgoingMessage(msgSent)
+		case <-s.nextOffsetRollingCh:
+			s.rollOffsets()
 		case <-serviceCtx.Done():
 			return
 		}
@@ -141,6 +145,7 @@ func (s *syncState) onNewRoundEvent(ent Event) {
 	s.scheduler.scheduleNewRound()
 	s.round = ent.round
 	s.fetchTransactions = ent.fetchTransactions
+	s.nextOffsetRollingCh = s.node.Clock().TimeoutAt(kickoffTime + 2*s.lastBeta)
 }
 
 func (s *syncState) evaluateSendingMessages(currentTimeout time.Duration) {
@@ -171,6 +176,7 @@ func (s *syncState) evaluateSendingMessages(currentTimeout time.Duration) {
 	s.sendMessageLoop(sendCtx, peers)
 }
 
-func (s *syncState) holdsoffDuration() time.Duration {
-	return s.lastBeta
+func (s *syncState) rollOffsets() {
+	s.nextOffsetRollingCh = s.node.Clock().TimeoutAt(s.node.Clock().Since() + 2*s.lastBeta)
+	s.requestsOffset++
 }

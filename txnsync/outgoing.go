@@ -23,6 +23,8 @@ import (
 	"github.com/algorand/go-algorand/data/transactions"
 )
 
+const messageTimeWindow = 20 * time.Millisecond
+
 type messageSentCallback struct {
 	encodedMessageSize  int
 	sentTranscationsIDs []transactions.Txid
@@ -75,12 +77,18 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transact
 	}
 
 	if s.fetchTransactions {
-		// todo - fill TxnBloomFilter
-		// todo - fill UpdatedRequestParams
+		// update the UpdatedRequestParams
+		offset, modulator := peer.getLocalRequestParams()
+		txMsg.updatedRequestParams.modulator = modulator
+		if modulator > 0 {
+			txMsg.updatedRequestParams.offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
+		}
+		// generate a bloom filter that matches the requests params.
+		bloomFilter := makeBloomFilter(txMsg.updatedRequestParams, pendingMessages, uint32(s.node.Random(0xffffffff)))
+		txMsg.txnBloomFilter = bloomFilter.encode()
 	}
 
-	//windowDuration = 20 * time.Millisecond
-	txMsg.transactionGroups.transactionsGroup, sentTxIDs = peer.selectPendingMessages(pendingMessages, 20*time.Millisecond, s.round)
+	txMsg.transactionGroups.transactionsGroup, sentTxIDs = peer.selectPendingMessages(pendingMessages, messageTimeWindow, s.round)
 
 	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
 }

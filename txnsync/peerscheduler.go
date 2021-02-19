@@ -85,10 +85,12 @@ func (p *peerScheduler) getTxSyncPeers() []*Peer {
 	// some of the network peers might not have a sync peer, so we need to create one for these.
 	for i, syncPeer := range syncPeers {
 		if syncPeer == nil {
-			syncPeers[i] = makePeer(networkPeersHandle[i])
+			syncPeer = makePeer(networkPeersHandle[i])
+			syncPeers[i] = syncPeer
 			updatedNetworkPeers = append(updatedNetworkPeers, networkPeersHandle[i])
 			updatedNetworkPeersSync = append(updatedNetworkPeersSync, syncPeers[i])
 		}
+		syncPeer.setLocalRequestParams(uint64(i), uint64(len(syncPeers)))
 	}
 	if len(updatedNetworkPeers) > 0 {
 		p.node.UpdatePeers(updatedNetworkPeersSync, updatedNetworkPeers)
