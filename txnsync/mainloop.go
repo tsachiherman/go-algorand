@@ -55,7 +55,7 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	s.incomingMessagesCh = make(chan incomingMessage, 1024)
 	s.outgoingMessagesCallbackCh = make(chan *messageSentCallback, 1024)
 	s.scheduler.node = s.node
-	s.lastBeta = s.beta(0)
+	s.lastBeta = beta(0)
 	startRound := s.node.CurrentRound()
 	s.onNewRoundEvent(MakeNewRoundEvent(startRound, false))
 
@@ -92,7 +92,7 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 }
 
 func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
-	newBeta := s.beta(ent.transactionPoolSize)
+	newBeta := beta(ent.transactionPoolSize)
 	// see if the newBeta is at least 20% smaller than the current one.
 	if (s.lastBeta * 8 / 10) <= newBeta {
 		// no, it's not.
@@ -129,14 +129,14 @@ func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
 }
 
 // calculate the beta parameter, based on the transcation pool size.
-func (s *syncState) beta(txPoolSize int) time.Duration {
+func beta(txPoolSize int) time.Duration {
 	if txPoolSize < 200 {
 		txPoolSize = 200
 	} else if txPoolSize > 10000 {
 		txPoolSize = 10000
 	}
-	beta := 2 * 3.6923 * math.Exp(float64(txPoolSize)*0.0003)
-	return time.Duration(float64(time.Millisecond) * beta)
+	beta := 1.0 / (2 * 3.6923 * math.Exp(float64(txPoolSize)*0.00026))
+	return time.Duration(float64(time.Second) * beta)
 
 }
 
