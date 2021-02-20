@@ -36,6 +36,7 @@ type syncState struct {
 	service *Service
 	log     logging.Logger
 	node    NodeConnector
+	isRelay bool
 
 	lastBeta                   time.Duration
 	round                      basics.Round
@@ -142,7 +143,15 @@ func beta(txPoolSize int) time.Duration {
 
 func (s *syncState) onNewRoundEvent(ent Event) {
 	s.node.Clock().Zero()
-	s.scheduler.scheduleNewRound()
+	peers := s.getPeers()
+	newRoundPeers := peers
+	if s.isRelay {
+		// on relays, outgoing peers have a difference scheduling, which is based on the incoming message timing
+		// rather then a priodic message transmission.
+		newRoundPeers = imcomingPeersOnly(newRoundPeers)
+	}
+	s.scheduler.scheduleNewRound(newRoundPeers)
+	s.updatePeersRequestParams(peers)
 	s.round = ent.round
 	s.fetchTransactions = ent.fetchTransactions
 	s.nextOffsetRollingCh = s.node.Clock().TimeoutAt(kickoffTime + 2*s.lastBeta)
@@ -179,4 +188,36 @@ func (s *syncState) evaluateSendingMessages(currentTimeout time.Duration) {
 func (s *syncState) rollOffsets() {
 	s.nextOffsetRollingCh = s.node.Clock().TimeoutAt(s.node.Clock().Since() + 2*s.lastBeta)
 	s.requestsOffset++
+}
+
+func (s *syncState) getPeers() (result []*Peer) {
+	peersInfo := s.node.GetPeers()
+	updatedNetworkPeers := []interface{}{}
+	updatedNetworkPeersSync := []*Peer{}
+	// some of the network peers might not have a sync peer, so we need to create one for these.
+	for _, peerInfo := range peersInfo {
+		if peerInfo.TxnSyncPeer == nil {
+			syncPeer := makePeer(peerInfo.NetworkPeer, peerInfo.IsOutgoing)
+			peerInfo.TxnSyncPeer = syncPeer
+			updatedNetworkPeers = append(updatedNetworkPeers, peerInfo.NetworkPeer)
+			updatedNetworkPeersSync = append(updatedNetworkPeersSync, syncPeer)
+		}
+		result = append(result, peerInfo.TxnSyncPeer)
+	}
+	if len(updatedNetworkPeers) > 0 {
+		s.node.UpdatePeers(updatedNetworkPeersSync, updatedNetworkPeers)
+	}
+	return result
+}
+
+func (s *syncState) updatePeersRequestParams(peers []*Peer) {
+	for i, peer := range peers {
+		if s.isRelay {
+			// on relay, ask for all messages.
+			peer.setLocalRequestParams(0, 1)
+		} else {
+			// on non-relay, ask for offset/modulator
+			peer.setLocalRequestParams(uint64(i), uint64(len(peers)))
+		}
+	}
 }

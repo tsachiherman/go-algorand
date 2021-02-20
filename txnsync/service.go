@@ -25,9 +25,6 @@ import (
 
 // Service is the transaction sync main service object.
 type Service struct {
-	nodeConn NodeConnector
-	log      logging.Logger
-
 	ctx       context.Context
 	cancelCtx context.CancelFunc
 	waitGroup sync.WaitGroup
@@ -36,13 +33,12 @@ type Service struct {
 }
 
 // MakeTranscationSyncService creates a new Service object
-func MakeTranscationSyncService(log logging.Logger, conn NodeConnector) *Service {
+func MakeTranscationSyncService(log logging.Logger, conn NodeConnector, isRelay bool) *Service {
 	s := &Service{
-		log:      log,
-		nodeConn: conn,
 		state: syncState{
-			node: conn,
-			log:  log,
+			node:    conn,
+			log:     log,
+			isRelay: isRelay,
 		},
 	}
 	s.state.service = s

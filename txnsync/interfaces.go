@@ -45,14 +45,21 @@ type IncomingMessageHandler func(networkPeer interface{}, peer *Peer, message []
 // SendMessageCallback define a message sent feedback for performing message tracking
 type SendMessageCallback func(enqueued bool, sequenceNumber uint64)
 
+// PeerInfo describes a single peer returned by GetPeers or GetPeer
+type PeerInfo struct {
+	TxnSyncPeer *Peer
+	NetworkPeer interface{}
+	IsOutgoing  bool
+}
+
 // NodeConnector is used by the transaction sync for communicating with components external to the txnsync package.
 type NodeConnector interface {
 	Events() <-chan Event
 	CurrentRound() basics.Round // return the current round from the ledger.
 	Clock() timers.WallClock
 	Random(uint64) uint64
-	GetPeers() ([]*Peer, []interface{})
-	GetPeer(interface{}) *Peer // get a single peer given a network peer opaque interface
+	GetPeers() []PeerInfo
+	GetPeer(interface{}) PeerInfo // get a single peer given a network peer opaque interface
 	UpdatePeers([]*Peer, []interface{})
 	SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback)
 	GetPendingTransactionGroups() [][]transactions.SignedTxn

@@ -73,10 +73,14 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 	peer := message.peer
 	if peer == nil {
 		// check if a peer was created already for this network peer object.
-		peer = s.node.GetPeer(message.networkPeer)
-		if peer == nil {
+		peerInfo := s.node.GetPeer(message.networkPeer)
+		if peerInfo.NetworkPeer == nil {
+			// the message.networkPeer isn't a valid unicast peer, so we can exit right here.
+			return
+		}
+		if peerInfo.TxnSyncPeer == nil {
 			// we couldn't really do much about this message previously, since we didn't have the peer.
-			peer = makePeer(message.networkPeer)
+			peer = makePeer(message.networkPeer, peerInfo.IsOutgoing)
 			// let the network peer object know about our peer
 			s.node.UpdatePeers([]*Peer{peer}, []interface{}{message.networkPeer})
 		}

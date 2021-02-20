@@ -46,6 +46,9 @@ const (
 type Peer struct {
 	// networkPeer is the network package exported peer. It's created on construction and never change afterward.
 	networkPeer interface{}
+	// isOutgoing defines whether the peer is an outgoing peer or not. For relays, this is meaningful as these have
+	// slighly different message timing logic.
+	isOutgoing bool
 	// state defines the peer state ( in terms of state machine state ). It's touched only by the sync main state machine
 	state peerState
 
@@ -75,9 +78,10 @@ type Peer struct {
 	localTransactionsBaseOffset byte
 }
 
-func makePeer(networkPeer interface{}) *Peer {
+func makePeer(networkPeer interface{}, isOutgoing bool) *Peer {
 	return &Peer{
 		networkPeer:            networkPeer,
+		isOutgoing:             isOutgoing,
 		recentSentTransactions: makeTransactionLru(recentTransactionsSentBufferLength),
 		dataExchangeRate:       defaultDataExchangeRateThreshold,
 	}
@@ -183,4 +187,15 @@ func (p *Peer) setLocalRequestParams(offset, modulator uint64) {
 // getLocalRequestParams returns the local requests params
 func (p *Peer) getLocalRequestParams() (offset, modulator byte) {
 	return p.localTransactionsBaseOffset, p.localTransactionsModulator
+}
+
+// imcomingPeersOnly scan the input peers array and return a subset of the peers that are incoming peers.
+func imcomingPeersOnly(peers []*Peer) (incomingPeers []*Peer) {
+	incomingPeers = make([]*Peer, 0, len(peers))
+	for _, peer := range peers {
+		if !peer.isOutgoing {
+			incomingPeers = append(incomingPeers, peer)
+		}
+	}
+	return
 }

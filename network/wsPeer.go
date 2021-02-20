@@ -235,6 +235,7 @@ type UnicastPeer interface {
 	Version() string
 	Request(ctx context.Context, tag Tag, topics Topics) (resp *Response, e error)
 	Respond(ctx context.Context, reqMsg IncomingMessage, topics Topics) (e error)
+	IsOutgoing() bool
 }
 
 // Create a wsPeerCore object
@@ -262,6 +263,12 @@ func (wp *wsPeerCore) GetHTTPClient() *http.Client {
 // Version returns the matching version from network.SupportedProtocolVersions
 func (wp *wsPeer) Version() string {
 	return wp.version
+}
+
+// IsOutgoing returns true if the connection is an outgoing connection or false if it the connection
+// is an incoming connection.
+func (wp *wsPeer) IsOutgoing() bool {
+	return wp.outgoing
 }
 
 // 	Unicast sends the given bytes to this specific peer. Does not wait for message to be sent.

@@ -64,18 +64,29 @@ func (tsnc *transcationSyncNodeConnector) Clock() timers.WallClock {
 	return tsnc.clock
 }
 
-func (tsnc *transcationSyncNodeConnector) GetPeer(networkPeer interface{}) *txnsync.Peer {
+func (tsnc *transcationSyncNodeConnector) GetPeer(networkPeer interface{}) txnsync.PeerInfo {
+	unicastPeer := networkPeer.(network.UnicastPeer)
+	if unicastPeer == nil {
+		return txnsync.PeerInfo{}
+	}
+
 	peerData := tsnc.node.net.GetPeerData(networkPeer, "txsync")
 	if peerData == nil {
-		return nil
+		return txnsync.PeerInfo{
+			IsOutgoing:  unicastPeer.IsOutgoing(),
+			NetworkPeer: unicastPeer,
+		}
 	}
-	return peerData.(*txnsync.Peer)
+	return txnsync.PeerInfo{
+		IsOutgoing:  unicastPeer.IsOutgoing(),
+		NetworkPeer: unicastPeer,
+		TxnSyncPeer: peerData.(*txnsync.Peer),
+	}
 }
 
-func (tsnc *transcationSyncNodeConnector) GetPeers() (txsyncPeers []*txnsync.Peer, netPeers []interface{}) {
+func (tsnc *transcationSyncNodeConnector) GetPeers() (peersInfo []txnsync.PeerInfo) {
 	networkPeers := tsnc.node.net.GetPeers(network.PeersConnectedOut, network.PeersConnectedIn)
-	txsyncPeers = make([]*txnsync.Peer, len(networkPeers))
-	netPeers = make([]interface{}, len(networkPeers))
+	peersInfo = make([]txnsync.PeerInfo, len(networkPeers))
 	k := 0
 	for i := range networkPeers {
 		unicastPeer := networkPeers[i].(network.UnicastPeer)
@@ -86,16 +97,16 @@ func (tsnc *transcationSyncNodeConnector) GetPeers() (txsyncPeers []*txnsync.Pee
 		if unicastPeer.Version() != "2.5" {
 			continue
 		}
-
-		netPeers[k] = networkPeers[i]
+		peersInfo[k].IsOutgoing = unicastPeer.IsOutgoing()
+		peersInfo[k].NetworkPeer = networkPeers[i]
 		peerData := tsnc.node.net.GetPeerData(networkPeers[i], "txsync")
 		if peerData != nil {
-			txsyncPeers[k] = peerData.(*txnsync.Peer)
+			peersInfo[k].TxnSyncPeer = peerData.(*txnsync.Peer)
 		}
 		k++
 	}
 
-	return txsyncPeers[:k], netPeers[:k]
+	return peersInfo[:k]
 }
 
 func (tsnc *transcationSyncNodeConnector) UpdatePeers(txsyncPeers []*txnsync.Peer, netPeers []interface{}) {

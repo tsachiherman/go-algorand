@@ -66,36 +66,16 @@ func (p *peerScheduler) Less(i, j int) bool {
 }
 
 // refresh the current schedule by creating new schedule for each of the peers.
-func (p *peerScheduler) scheduleNewRound() {
-	peers := p.getTxSyncPeers()
+func (p *peerScheduler) scheduleNewRound(peers []*Peer) {
 	// clear the existings peers list.
-	p.peers = p.peers[:0]
+	p.peers = make(peerBuckets, 0, len(peers))
 	for _, peer := range peers {
 		peerEntry := peerBucket{peer: peer}
 		peerEntry.next = kickoffTime + time.Duration(p.node.Random(uint64(randomRange)))
 		p.peers = append(p.peers, peerEntry)
 	}
 	heap.Init(p)
-}
 
-func (p *peerScheduler) getTxSyncPeers() []*Peer {
-	syncPeers, networkPeersHandle := p.node.GetPeers()
-	updatedNetworkPeers := []interface{}{}
-	updatedNetworkPeersSync := []*Peer{}
-	// some of the network peers might not have a sync peer, so we need to create one for these.
-	for i, syncPeer := range syncPeers {
-		if syncPeer == nil {
-			syncPeer = makePeer(networkPeersHandle[i])
-			syncPeers[i] = syncPeer
-			updatedNetworkPeers = append(updatedNetworkPeers, networkPeersHandle[i])
-			updatedNetworkPeersSync = append(updatedNetworkPeersSync, syncPeers[i])
-		}
-		syncPeer.setLocalRequestParams(uint64(i), uint64(len(syncPeers)))
-	}
-	if len(updatedNetworkPeers) > 0 {
-		p.node.UpdatePeers(updatedNetworkPeersSync, updatedNetworkPeers)
-	}
-	return syncPeers
 }
 
 func (p *peerScheduler) nextDuration() time.Duration {
