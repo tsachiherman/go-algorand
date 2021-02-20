@@ -92,11 +92,11 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transact
 
 	var txnGroups [][]transactions.SignedTxn
 	txnGroups, sentTxIDs = peer.selectPendingMessages(pendingMessages, messageTimeWindow, s.round)
-	if len(txnGroups) > 0 {
-		fmt.Printf("sent transactions groups %d\n", len(txnGroups))
-	}
-	txMsg.TransactionGroups.bytes = encodeTransactionGroups(txnGroups)
 
+	txMsg.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
+	/*if len(txnGroups) > 0 {
+		fmt.Printf("sent transactions groups %d (%d bytes)\n", len(txnGroups), len(txMsg.TransactionGroups.Bytes))
+	}*/
 	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
 }
 

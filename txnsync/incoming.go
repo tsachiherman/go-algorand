@@ -53,13 +53,11 @@ func (s *syncState) asyncIncomingMessageHandler(networkPeer interface{}, peer *P
 		case s.incomingMessagesCh <- incomingMessage{networkPeer: networkPeer, message: txMsg, sequenceNumber: sequenceNumber, encodedSize: len(message)}:
 		default:
 			// todo - handle the case where we can't write to the channel.
-			fmt.Printf("received message but can't write to channel 1")
 		}
 		return nil
 	}
 	err = peer.incomingMessages.enqueue(txMsg, sequenceNumber, len(message))
 	if err != nil {
-		fmt.Printf("received message but can't enqueue")
 		return err
 	}
 
@@ -67,7 +65,6 @@ func (s *syncState) asyncIncomingMessageHandler(networkPeer interface{}, peer *P
 	case s.incomingMessagesCh <- incomingMessage{peer: peer}:
 	default:
 		// todo - handle the case where we can't write to the channel.
-		fmt.Printf("received message but can't write to channel 2")
 	}
 	return nil
 }
@@ -97,7 +94,7 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		}
 		if seq != peer.nextReceivedMessageSeq {
 			// if we recieve a message which wasn't in-order, just let it go.
-			fmt.Printf("received message out of order; seq = %d, expecting seq = %d\n", seq, peer.nextReceivedMessageSeq)
+			//fmt.Printf("received message out of order; seq = %d, expecting seq = %d\n", seq, peer.nextReceivedMessageSeq)
 			break
 		}
 		txMsg, encodedSize, err := peer.incomingMessages.pop()
@@ -127,10 +124,10 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		// if the peer's round is more than a single round behind the local node, then we don't want to
 		// try and load the transactions. The other peer should first catch up before getting transactions.
 		if (peer.lastRound + 1) < s.round {
-			fmt.Printf("received message from old round %d\n", peer.lastRound)
+			//fmt.Printf("received message from old round %d\n", peer.lastRound)
 			continue
 		}
-		txnGroups, err := decodeTransactionGroups(txMsg.TransactionGroups.bytes)
+		txnGroups, err := decodeTransactionGroups(txMsg.TransactionGroups.Bytes)
 		if err != nil {
 			// todo
 			fmt.Printf("received transactions groups failed %v\n", err)
@@ -138,7 +135,7 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		}
 		s.node.IncomingTransactionGroups(peer.networkPeer, txnGroups)
 		if len(txnGroups) > 0 {
-			fmt.Printf("received transactions groups %d\n", len(txnGroups))
+			//fmt.Printf("received transactions groups %d\n", len(txnGroups))
 		}
 	}
 }

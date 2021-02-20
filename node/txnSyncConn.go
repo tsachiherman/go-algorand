@@ -18,7 +18,6 @@
 package node
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/algorand/go-algorand/data"
@@ -127,7 +126,6 @@ func (tsnc *transcationSyncNodeConnector) onNewTransactionPoolEntry(transcationP
 	case tsnc.eventsCh <- txnsync.MakeTranscationPoolChangeEvent(transcationPoolSize):
 	default:
 	}
-	fmt.Printf("onNewTransactionPoolEntry %d\n", transcationPoolSize)
 }
 
 func (tsnc *transcationSyncNodeConnector) onNewRound(round basics.Round, hasParticipationKeys bool) {
