@@ -87,7 +87,7 @@ func makePeer(networkPeer interface{}, isOutgoing bool) *Peer {
 	}
 }
 
-func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn, sendWindow time.Duration, round basics.Round) (selectedTxns [][]transactions.SignedTxn, selectedTxnIDs []transactions.Txid) {
+func (p *Peer) selectPendingMessages(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid) {
 	// if peer is too far back, don't send it any transactions ( or if the peer is not interested in transactions )
 	if p.lastRound < round.SubSaturate(1) || p.requestedTransactionsModulator == 0 {
 		return nil, nil
@@ -96,10 +96,10 @@ func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn,
 	windowLengthBytes := int(uint64(sendWindow) * p.dataExchangeRate / uint64(time.Second))
 
 	accumulatedSize := 0
-	selectedTxnIDs = make([]transactions.Txid, 0, len(pendingMessages))
-	for grpIdx := range pendingMessages {
+	selectedTxnIDs = make([]transactions.Txid, 0, len(pendingTransactions))
+	for grpIdx := range pendingTransactions {
 		// filter out transactions that we already previously sent.
-		txID := pendingMessages[grpIdx][0].ID()
+		txID := pendingTransactions[grpIdx].Transactions[0].ID()
 		if p.recentSentTransactions.contained(txID) {
 			// we already sent that transaction. no need to send again.
 			continue
@@ -113,13 +113,13 @@ func (p *Peer) selectPendingMessages(pendingMessages [][]transactions.SignedTxn,
 			}
 		}
 
-		selectedTxns = append(selectedTxns, pendingMessages[grpIdx])
+		selectedTxns = append(selectedTxns, pendingTransactions[grpIdx])
 		selectedTxnIDs = append(selectedTxnIDs, txID)
 
 		// calculate the total size of the transaction group.
-		for txidx := range pendingMessages[grpIdx] {
+		for txidx := range pendingTransactions[grpIdx].Transactions {
 			encodingBuf := protocol.GetEncodingBuf()
-			accumulatedSize += len(pendingMessages[grpIdx][txidx].MarshalMsg(encodingBuf))
+			accumulatedSize += len(pendingTransactions[grpIdx].Transactions[txidx].MarshalMsg(encodingBuf))
 			protocol.PutEncodingBuf(encodingBuf)
 		}
 		if accumulatedSize > windowLengthBytes {

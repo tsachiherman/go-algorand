@@ -26,33 +26,38 @@ import (
 )
 
 func TestTxnGroupEncoding(t *testing.T) {
-	inTxnGroups := [][]transactions.SignedTxn{
-		{
-			{
-				Txn: transactions.Transaction{
-					Type: protocol.PaymentTx,
+
+	inTxnGroups := []transactions.SignedTxGroup{
+		transactions.SignedTxGroup{
+			Transactions: []transactions.SignedTxn{
+				{
+					Txn: transactions.Transaction{
+						Type: protocol.PaymentTx,
+					},
 				},
-			},
-			{
-				Txn: transactions.Transaction{
-					Type: protocol.KeyRegistrationTx,
+				{
+					Txn: transactions.Transaction{
+						Type: protocol.KeyRegistrationTx,
+					},
 				},
 			},
 		},
-		{
-			{
-				Txn: transactions.Transaction{
-					Type: protocol.AssetConfigTx,
+		transactions.SignedTxGroup{
+			Transactions: []transactions.SignedTxn{
+				{
+					Txn: transactions.Transaction{
+						Type: protocol.AssetConfigTx,
+					},
 				},
-			},
-			{
-				Txn: transactions.Transaction{
-					Type: protocol.AssetFreezeTx,
+				{
+					Txn: transactions.Transaction{
+						Type: protocol.AssetFreezeTx,
+					},
 				},
-			},
-			{
-				Txn: transactions.Transaction{
-					Type: protocol.CompactCertTx,
+				{
+					Txn: transactions.Transaction{
+						Type: protocol.CompactCertTx,
+					},
 				},
 			},
 		},

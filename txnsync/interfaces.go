@@ -62,8 +62,8 @@ type NodeConnector interface {
 	GetPeer(interface{}) PeerInfo // get a single peer given a network peer opaque interface
 	UpdatePeers([]*Peer, []interface{})
 	SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback)
-	GetPendingTransactionGroups() [][]transactions.SignedTxn
-	IncomingTransactionGroups(interface{}, [][]transactions.SignedTxn)
+	GetPendingTransactionGroups() []transactions.SignedTxGroup
+	IncomingTransactionGroups(interface{}, []transactions.SignedTxGroup)
 }
 
 // MakeTranscationPoolChangeEvent creates an event for when a txn pool size has changed.

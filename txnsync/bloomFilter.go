@@ -63,7 +63,7 @@ func (bf *bloomFilter) encode() (out encodedBloomFilter) {
 	return
 }
 
-func makeBloomFilter(encodingParams requestParams, txnGroups [][]transactions.SignedTxn, shuffler uint32) (result bloomFilter) {
+func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.SignedTxGroup, shuffler uint32) (result bloomFilter) {
 	result.encodingParams = encodingParams
 	var filtedTransactionsIDs []transactions.Txid
 	switch {
@@ -74,13 +74,13 @@ func makeBloomFilter(encodingParams requestParams, txnGroups [][]transactions.Si
 		// we want all.
 		filtedTransactionsIDs = make([]transactions.Txid, 0, len(txnGroups))
 		for _, group := range txnGroups {
-			filtedTransactionsIDs = append(filtedTransactionsIDs, group[0].ID())
+			filtedTransactionsIDs = append(filtedTransactionsIDs, group.Transactions[0].ID())
 		}
 	default:
 		// we want subset.
 		filtedTransactionsIDs = make([]transactions.Txid, 0, len(txnGroups))
 		for _, group := range txnGroups {
-			txID := group[0].ID()
+			txID := group.Transactions[0].ID()
 			txidValue := uint64(txID[0]) + (uint64(txID[1]) << 8) + (uint64(txID[2]) << 16) + (uint64(txID[3]) << 24) + (uint64(txID[4]) << 32) + (uint64(txID[5]) << 40) + (uint64(txID[6]) << 48) + (uint64(txID[7]) << 56)
 			if txidValue%uint64(encodingParams.Modulator) != uint64(encodingParams.Offset) {
 				continue

@@ -475,7 +475,7 @@ func (node *AlgorandFullNode) BroadcastSignedTxGroup(txgroup []transactions.Sign
 		return err
 	}
 
-	err = node.transactionPool.Remember(txgroup)
+	err = node.transactionPool.Remember(transactions.SignedTxGroup{Transactions: txgroup, LocallyOriginated: true})
 	if err != nil {
 		node.log.Infof("rejected by local pool: %v - transaction group was %+v", err, txgroup)
 		return err
@@ -702,7 +702,12 @@ func (node *AlgorandFullNode) SuggestedFee() basics.MicroAlgos {
 // GetPendingTxnsFromPool returns a snapshot of every pending transactions from the node's transaction pool in a slice.
 // Transactions are sorted in decreasing order. If no transactions, returns an empty slice.
 func (node *AlgorandFullNode) GetPendingTxnsFromPool() ([]transactions.SignedTxn, error) {
-	return bookkeeping.SignedTxnGroupsFlatten(node.transactionPool.PendingTxGroups()), nil
+	poolGroups := node.transactionPool.PendingTxGroups()
+	txnGroups := make([][]transactions.SignedTxn, len(poolGroups))
+	for i := range txnGroups {
+		txnGroups[i] = poolGroups[i].Transactions
+	}
+	return bookkeeping.SignedTxnGroupsFlatten(txnGroups), nil
 }
 
 // Reload participation keys from disk periodically

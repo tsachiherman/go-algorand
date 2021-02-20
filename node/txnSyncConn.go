@@ -128,7 +128,7 @@ func (tsnc *transcationSyncNodeConnector) SendPeerMessage(netPeer interface{}, m
 	}
 }
 
-func (tsnc *transcationSyncNodeConnector) GetPendingTransactionGroups() [][]transactions.SignedTxn {
+func (tsnc *transcationSyncNodeConnector) GetPendingTransactionGroups() []transactions.SignedTxGroup {
 	return tsnc.node.transactionPool.PendingTxGroups()
 }
 
@@ -191,9 +191,9 @@ func (tsnc *transcationSyncNodeConnector) stop() {
 
 }
 
-func (tsnc *transcationSyncNodeConnector) IncomingTransactionGroups(networkPeer interface{}, txGroups [][]transactions.SignedTxn) {
+func (tsnc *transcationSyncNodeConnector) IncomingTransactionGroups(networkPeer interface{}, txGroups []transactions.SignedTxGroup) {
 	for _, txGroup := range txGroups {
-		if err := tsnc.txHandler.Handle(txGroup); err != nil {
+		if err := tsnc.txHandler.Handle(txGroup.Transactions); err != nil {
 			// we had some failuire, disconnect from peer.
 			tsnc.node.net.Disconnect(networkPeer)
 			return

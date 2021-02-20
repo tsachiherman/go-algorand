@@ -72,7 +72,7 @@ func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 	}
 }
 
-func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transactions.SignedTxn) (encodedMessage []byte, txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid) {
+func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup) (encodedMessage []byte, txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid) {
 	txMsg = &transactionBlockMessage{
 		Version: txnBlockMessageVersion,
 		Round:   s.round,
@@ -86,12 +86,17 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transact
 			txMsg.UpdatedRequestParams.Offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
 		}
 		// generate a bloom filter that matches the requests params.
-		bloomFilter := makeBloomFilter(txMsg.UpdatedRequestParams, pendingMessages, uint32(s.node.Random(0xffffffff)))
+		bloomFilter := makeBloomFilter(txMsg.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
 		txMsg.TxnBloomFilter = bloomFilter.encode()
 	}
 
-	var txnGroups [][]transactions.SignedTxn
-	txnGroups, sentTxIDs = peer.selectPendingMessages(pendingMessages, messageTimeWindow, s.round)
+	if !s.isRelay {
+		// on non-relay, we need to filter out the non-locally originated messages since we don't want
+		// non-relays to send transcation that they received via the transaction sync back.
+		pendingTransactions = locallyGeneratedTransactions(pendingTransactions)
+	}
+	var txnGroups []transactions.SignedTxGroup
+	txnGroups, sentTxIDs = peer.selectPendingMessages(pendingTransactions, messageTimeWindow, s.round)
 
 	txMsg.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
 	/*if len(txnGroups) > 0 {
@@ -102,4 +107,15 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingMessages [][]transact
 
 func (s *syncState) evaluateOutgoingMessage(msg *messageSentCallback) {
 	msg.peer.updateMessageSent(msg.sentMessage, msg.sentTranscationsIDs, msg.sentTimestamp, msg.sequenceNumber, msg.encodedMessageSize)
+}
+
+// locallyGeneratedTransactions return a subset of the given transactionGroups array by filtering out transactions that are not locally generated.
+func locallyGeneratedTransactions(transactionGroups []transactions.SignedTxGroup) (result []transactions.SignedTxGroup) {
+	result = make([]transactions.SignedTxGroup, 0, len(transactionGroups))
+	for _, txnGroup := range transactionGroups {
+		if txnGroup.LocallyOriginated {
+			result = append(result, txnGroup)
+		}
+	}
+	return transactionGroups
 }
