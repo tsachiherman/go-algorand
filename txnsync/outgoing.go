@@ -17,8 +17,8 @@
 package txnsync
 
 import (
-	"context"
 	"fmt"
+	"github.com/algorand/go-algorand/util/timers"
 	"time"
 
 	"github.com/algorand/go-algorand/data/transactions"
@@ -54,7 +54,7 @@ func (msc *messageSentCallback) asyncMessageSent(enqueued bool, sequenceNumber u
 	}
 }
 
-func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
+func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Peer) {
 	if len(peers) == 0 {
 		// no peers - no messages that need to be sent.
 		return
@@ -65,7 +65,7 @@ func (s *syncState) sendMessageLoop(ctx context.Context, peers []*Peer) {
 		msgCallback := &messageSentCallback{peer: peer, state: s}
 		encodedMessage, msgCallback.sentMessage, msgCallback.sentTranscationsIDs = s.assemblePeerMessage(peer, pendingTransactionGroups)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
-		if ctx.Err() != nil {
+		if deadline.Expired() {
 			// we ran out of time sending messages, stop sending any more messages.
 			break
 		}

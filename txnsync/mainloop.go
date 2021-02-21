@@ -111,8 +111,8 @@ func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
 	// reset the interruptablePeers table, since all it's members were made into holdsoff
 	s.interruptablePeers = make(map[*Peer]bool)
 
-	sendCtx := s.node.Clock().TimeoutAtContext(s.node.Clock().Since() + sendMessagesTime)
-	s.sendMessageLoop(sendCtx, peers)
+	deadlineMonitor := s.node.Clock().DeadlineMonitorAt(s.node.Clock().Since() + sendMessagesTime)
+	s.sendMessageLoop(deadlineMonitor, peers)
 
 	currentTimeout := s.node.Clock().Since()
 	for _, peer := range peers {
@@ -181,8 +181,8 @@ func (s *syncState) evaluateSendingMessages(currentTimeout time.Duration) {
 	}
 
 	peers = peers[:sendMessagePeers]
-	sendCtx := s.node.Clock().TimeoutAtContext(currentTimeout + sendMessagesTime)
-	s.sendMessageLoop(sendCtx, peers)
+	deadlineMonitor := s.node.Clock().DeadlineMonitorAt(currentTimeout + sendMessagesTime)
+	s.sendMessageLoop(deadlineMonitor, peers)
 }
 
 func (s *syncState) rollOffsets() {

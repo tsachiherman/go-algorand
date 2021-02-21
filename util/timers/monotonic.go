@@ -17,7 +17,6 @@
 package timers
 
 import (
-	"context"
 	"time"
 
 	"github.com/algorand/go-algorand/logging"
@@ -93,15 +92,8 @@ func (m *Monotonic) Since() time.Duration {
 	return time.Now().Sub(m.zero)
 }
 
-// TimeoutAtContext returns a context that expires after the provided delta time from zero has passed.
-// If delta has already passed, it returns an expired context.
-// The function is symmetrical to TimeoutAt, but use the Context construct.
-func (m *Monotonic) TimeoutAtContext(delta time.Duration) context.Context {
-	timeoutCh := m.TimeoutAt(delta)
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	go func() {
-		<-timeoutCh
-		cancelFunc()
-	}()
-	return ctx
+// DeadlineMonitorAt returns a DeadlineMonitor that expires after the provided delta time from zero has passed.
+// The method must be called after Zero; otherwise, the context's behavior is undefined.
+func (m *Monotonic) DeadlineMonitorAt(at time.Duration) DeadlineMonitor {
+	return MakeMonotonicDeadlineMonitor(m, at)
 }

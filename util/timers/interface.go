@@ -18,7 +18,6 @@
 package timers
 
 import (
-	"context"
 	"time"
 )
 
@@ -52,10 +51,14 @@ type WallClock interface {
 	// wall clock time.
 	Since() time.Duration
 
-	// TimeoutAtContext returns a context that expires after the provided delta time from zero has passed.
-	// If delta has already passed, it returns an expired context.
-	// The function is symmetrical to TimeoutAt, but use the Context construct.
+	// DeadlineMonitorAt returns a DeadlineMonitor that expires after the provided delta time from zero has passed.
 	//
-	// TimeoutAtContext must be called after Zero; otherwise, the context's behavior is undefined.
-	TimeoutAtContext(delta time.Duration) context.Context
+	// DeadlineMonitorAt must be called after Zero; otherwise, the context's behavior is undefined.
+	DeadlineMonitorAt(at time.Duration) DeadlineMonitor
+}
+
+// DeadlineMonitor test to see if the deadline it was created for has been reached yet or not.
+type DeadlineMonitor interface {
+	// Expired return true if the deadline has passed, or false otherwise.
+	Expired() bool
 }
