@@ -62,13 +62,13 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 
 	externalEvents := s.node.Events()
 	clock := s.node.Clock()
-	var nextSyncCh <-chan time.Time
+	var nextPeerStateCh <-chan time.Time
 	for {
-		nextSync := s.scheduler.nextDuration()
-		if nextSync != time.Duration(0) {
-			nextSyncCh = clock.TimeoutAt(nextSync)
+		nextPeerStateTime := s.scheduler.nextDuration()
+		if nextPeerStateTime != time.Duration(0) {
+			nextPeerStateCh = clock.TimeoutAt(nextPeerStateTime)
 		} else {
-			nextSyncCh = nil
+			nextPeerStateCh = nil
 		}
 		select {
 		case ent := <-externalEvents:
@@ -78,8 +78,8 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 			case newRoundEvent:
 				s.onNewRoundEvent(ent)
 			}
-		case <-nextSyncCh:
-			s.evaluateSendingMessages(nextSync)
+		case <-nextPeerStateCh:
+			s.evaluatePeerStateChanges(nextPeerStateTime)
 		case incomingMsg := <-s.incomingMessagesCh:
 			s.evaluateIncomingMessage(incomingMsg)
 		case msgSent := <-s.outgoingMessagesCallbackCh:
@@ -157,26 +157,74 @@ func (s *syncState) onNewRoundEvent(ent Event) {
 	s.nextOffsetRollingCh = s.node.Clock().TimeoutAt(kickoffTime + 2*s.lastBeta)
 }
 
-func (s *syncState) evaluateSendingMessages(currentTimeout time.Duration) {
+func (s *syncState) evaluatePeerStateChanges(currentTimeout time.Duration) {
 	peers := s.scheduler.nextPeers()
 	if len(peers) == 0 {
 		return
 	}
 
 	sendMessagePeers := 0
-	for _, peer := range peers {
-		switch peer.state {
-		case peerStateHoldsoff:
-			peer.state = peerStateInterrupt
-			s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
-			s.interruptablePeers[peer] = true
-		default: // peerStateStartup && peerStateInterrupt
-			peer.state = peerStateHoldsoff
-			s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
-			// prepare the send message array.
-			peers[sendMessagePeers] = peer
-			sendMessagePeers++
-			delete(s.interruptablePeers, peer)
+	if s.isRelay {
+		// on relays, peers don't go into peerStateInterrupt; instead, they consistently remain in peerStateHoldsoff with double the beta.
+		for _, peer := range peers {
+			if peer.isOutgoing {
+				// outgoing peers are "special", as they respond to messages rather then generating their own.
+				// we need to figure the special state needed for "late bloom filter message"
+				switch peer.state {
+				case peerStateHoldsoff:
+					// send a message, and reschedule for late bloom message.
+					// prepare the send message array.
+					peers[sendMessagePeers] = peer
+					sendMessagePeers++
+					peer.state = peerStateLateBloom
+					// todo - find the proper way to reschedule that from the peer's data.
+					//s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta*2)
+				case peerStateLateBloom:
+					// send just the bloom filter message.
+					// how ?
+
+					// reset peer state
+					peer.state = peerStateStartup
+				default:
+					// this isn't expected, so we can just ignore this.
+					// todo : log
+				}
+			} else {
+				switch peer.state {
+				case peerStateStartup:
+					peer.state = peerStateHoldsoff
+					fallthrough
+				case peerStateHoldsoff:
+					s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta*2)
+					// prepare the send message array.
+					peers[sendMessagePeers] = peer
+					sendMessagePeers++
+				default: // peerStateInterrupt & peerStateLateBloom
+					// this isn't expected, so we can just ignore this.
+					// todo : log
+				}
+			}
+		}
+	} else {
+		for _, peer := range peers {
+			switch peer.state {
+			case peerStateHoldsoff:
+				peer.state = peerStateInterrupt
+				s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
+				s.interruptablePeers[peer] = true
+			case peerStateStartup:
+				fallthrough
+			case peerStateInterrupt:
+				peer.state = peerStateHoldsoff
+				s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
+				// prepare the send message array.
+				peers[sendMessagePeers] = peer
+				sendMessagePeers++
+				delete(s.interruptablePeers, peer)
+			default: // peerStateLateBloom
+				// this isn't expected, so we can just ignore this.
+				// todo : log
+			}
 		}
 	}
 

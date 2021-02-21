@@ -40,6 +40,8 @@ const (
 	peerStateHoldsoff
 	// peerStateInterrupt is set once the holdoff period for the peer have expired.
 	peerStateInterrupt
+	// peerStateLateBloom is set for outgoing peers on relays, indicating that the next message should be a bloom message.
+	peerStateLateBloom
 )
 
 // Peer contains peer-related data which extends the data "known" and managed by the network package.
@@ -56,8 +58,7 @@ type Peer struct {
 
 	incomingMessages messageOrderingHeap
 
-	nextReceivedMessageSeq          uint64
-	lastConfirmedMessageSeqReceived uint64
+	nextReceivedMessageSeq uint64 // the next message seq that we expect to recieve from that peer; implies that all previous messages have been accepted.
 
 	recentIncomingBloomFilters []bloomFilter
 	recentSentTransactions     *transactionLru
@@ -70,6 +71,11 @@ type Peer struct {
 	lastSentMessageRound          basics.Round
 	lastSentMessageTimestamp      time.Duration
 	lastSentMessageSize           int
+
+	lastConfirmedMessageSeqReceived uint64 // the last message that was confirmed by the peer to have been accepted.
+	lastReceivedMessageLocalRound   basics.Round
+	lastReceivedMessageTimestamp    time.Duration
+	lastReceivedMessageSize         int
 
 	dataExchangeRate uint64 // the combined upload/download rate in bytes/second
 
@@ -160,6 +166,10 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 			p.dataExchangeRate = dataExchangeRate
 		}
 	}
+	p.lastReceivedMessageLocalRound = currentRound
+	p.lastReceivedMessageTimestamp = currentTime
+	p.lastReceivedMessageSize = incomingMessageSize
+
 }
 
 // update the peer once the message was sent successfully.

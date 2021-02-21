@@ -90,6 +90,7 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 			return
 		}
 	}
+	messageProcessed := false
 	for {
 		seq, err := peer.incomingMessages.peekSequence()
 		if err != nil {
@@ -141,5 +142,16 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		if len(txnGroups) > 0 {
 			//fmt.Printf("received transactions groups %d\n", len(txnGroups))
 		}
+		messageProcessed = true
+	}
+	// if we're a relay, this is an outgoing peer and we've processed a valid message,
+	// then we want to respond right away as well as schedule bloom message.
+	if messageProcessed && peer.isOutgoing && s.isRelay {
+		/*deadlineMonitor := s.node.Clock().DeadlineMonitorAt(s.node.Clock().Since() + sendMessagesTime)
+		s.sendMessageLoop(deadlineMonitor, []*Peer{peer})
+		peer.state = peerStateLateBloom
+		*/
+		peer.state = peerStateHoldsoff
+		s.scheduler.schedulerPeer(peer, s.node.Clock().Since())
 	}
 }

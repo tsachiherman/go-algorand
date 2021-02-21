@@ -60,10 +60,11 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 		return
 	}
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
+	currentTime := s.node.Clock().Since()
 	var encodedMessage []byte
 	for _, peer := range peers {
 		msgCallback := &messageSentCallback{peer: peer, state: s}
-		encodedMessage, msgCallback.sentMessage, msgCallback.sentTranscationsIDs = s.assemblePeerMessage(peer, pendingTransactionGroups)
+		encodedMessage, msgCallback.sentMessage, msgCallback.sentTranscationsIDs = s.assemblePeerMessage(peer, pendingTransactionGroups, currentTime)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
 		if deadline.Expired() {
 			// we ran out of time sending messages, stop sending any more messages.
@@ -72,7 +73,7 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 	}
 }
 
-func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup) (encodedMessage []byte, txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid) {
+func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup, currentTime time.Duration) (encodedMessage []byte, txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid) {
 	txMsg = &transactionBlockMessage{
 		Version: txnBlockMessageVersion,
 		Round:   s.round,
@@ -102,6 +103,22 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 	/*if len(txnGroups) > 0 {
 		fmt.Printf("sent transactions groups %d (%d bytes)\n", len(txnGroups), len(txMsg.TransactionGroups.Bytes))
 	}*/
+
+	txMsg.MsgSync.RefTxnBlockMsgSeq = peer.nextReceivedMessageSeq - 1
+	if peer.lastReceivedMessageTimestamp != 0 && peer.lastReceivedMessageLocalRound == s.round {
+		txMsg.MsgSync.ResponseElapsedTime = uint64((currentTime - peer.lastReceivedMessageTimestamp).Nanoseconds())
+	}
+
+	if s.isRelay {
+		if peer.isOutgoing {
+			txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) // todo - find a better way to caluclate this.
+		} else {
+			txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) * 2
+		}
+	} else {
+		txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds())
+	}
+
 	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
 }
 
