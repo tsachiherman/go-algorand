@@ -24,6 +24,7 @@ import (
 
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/logging"
+	"github.com/algorand/go-algorand/util/timers"
 )
 
 const (
@@ -37,6 +38,7 @@ type syncState struct {
 	log     logging.Logger
 	node    NodeConnector
 	isRelay bool
+	clock   timers.WallClock
 
 	lastBeta                   time.Duration
 	round                      basics.Round
@@ -52,6 +54,7 @@ type syncState struct {
 func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	s.clock = s.node.Clock()
 	s.interruptablePeers = make(map[*Peer]bool)
 	s.incomingMessagesCh = make(chan incomingMessage, 1024)
 	s.outgoingMessagesCallbackCh = make(chan *messageSentCallback, 1024)
@@ -61,12 +64,11 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	s.onNewRoundEvent(MakeNewRoundEvent(startRound, false))
 
 	externalEvents := s.node.Events()
-	clock := s.node.Clock()
 	var nextPeerStateCh <-chan time.Time
 	for {
 		nextPeerStateTime := s.scheduler.nextDuration()
 		if nextPeerStateTime != time.Duration(0) {
-			nextPeerStateCh = clock.TimeoutAt(nextPeerStateTime)
+			nextPeerStateCh = s.clock.TimeoutAt(nextPeerStateTime)
 		} else {
 			nextPeerStateCh = nil
 		}
@@ -111,10 +113,10 @@ func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
 	// reset the interruptablePeers table, since all it's members were made into holdsoff
 	s.interruptablePeers = make(map[*Peer]bool)
 
-	deadlineMonitor := s.node.Clock().DeadlineMonitorAt(s.node.Clock().Since() + sendMessagesTime)
+	deadlineMonitor := s.clock.DeadlineMonitorAt(s.clock.Since() + sendMessagesTime)
 	s.sendMessageLoop(deadlineMonitor, peers)
 
-	currentTimeout := s.node.Clock().Since()
+	currentTimeout := s.clock.Since()
 	for _, peer := range peers {
 		peerNext := s.scheduler.peerDuration(peer)
 		if peerNext < currentTimeout {
@@ -142,7 +144,7 @@ func beta(txPoolSize int) time.Duration {
 }
 
 func (s *syncState) onNewRoundEvent(ent Event) {
-	s.node.Clock().Zero()
+	s.clock = s.clock.Zero().(timers.WallClock)
 	peers := s.getPeers()
 	newRoundPeers := peers
 	if s.isRelay {
@@ -154,7 +156,7 @@ func (s *syncState) onNewRoundEvent(ent Event) {
 	s.updatePeersRequestParams(peers)
 	s.round = ent.round
 	s.fetchTransactions = ent.fetchTransactions
-	s.nextOffsetRollingCh = s.node.Clock().TimeoutAt(kickoffTime + 2*s.lastBeta)
+	s.nextOffsetRollingCh = s.clock.TimeoutAt(kickoffTime + 2*s.lastBeta)
 }
 
 func (s *syncState) evaluatePeerStateChanges(currentTimeout time.Duration) {
@@ -229,12 +231,12 @@ func (s *syncState) evaluatePeerStateChanges(currentTimeout time.Duration) {
 	}
 
 	peers = peers[:sendMessagePeers]
-	deadlineMonitor := s.node.Clock().DeadlineMonitorAt(currentTimeout + sendMessagesTime)
+	deadlineMonitor := s.clock.DeadlineMonitorAt(currentTimeout + sendMessagesTime)
 	s.sendMessageLoop(deadlineMonitor, peers)
 }
 
 func (s *syncState) rollOffsets() {
-	s.nextOffsetRollingCh = s.node.Clock().TimeoutAt(s.node.Clock().Since() + 2*s.lastBeta)
+	s.nextOffsetRollingCh = s.clock.TimeoutAt(s.clock.Since() + 2*s.lastBeta)
 	s.requestsOffset++
 }
 

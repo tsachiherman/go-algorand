@@ -59,7 +59,9 @@ func decodeBloomFilter(enc encodedBloomFilter) (outFilter bloomFilter, err error
 func (bf *bloomFilter) encode() (out encodedBloomFilter) {
 	out.BloomFilterType = byte(multiHashBloomFilter)
 	out.EncodingParams = bf.encodingParams
-	out.BloomFilter, _ = bf.filter.MarshalBinary()
+	if bf.filter != nil {
+		out.BloomFilter, _ = bf.filter.MarshalBinary()
+	}
 	return
 }
 

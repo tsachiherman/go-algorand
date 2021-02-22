@@ -44,7 +44,7 @@ func (msc *messageSentCallback) asyncMessageSent(enqueued bool, sequenceNumber u
 		return
 	}
 	// record the timestamp here, before placing the entry on the queue
-	msc.sentTimestamp = msc.state.node.Clock().Since()
+	msc.sentTimestamp = msc.state.clock.Since()
 	msc.sequenceNumber = sequenceNumber
 
 	select {
@@ -60,7 +60,7 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 		return
 	}
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
-	currentTime := s.node.Clock().Since()
+	currentTime := s.clock.Since()
 	var encodedMessage []byte
 	for _, peer := range peers {
 		msgCallback := &messageSentCallback{peer: peer, state: s}
@@ -110,10 +110,11 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 
 	if createBloomFilter {
 		// generate a bloom filter that matches the requests params.
-		bloomFilter := makeBloomFilter(txMsg.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
-		txMsg.TxnBloomFilter = bloomFilter.encode()
+		if len(pendingTransactions) > 0 {
+			bloomFilter := makeBloomFilter(txMsg.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
+			txMsg.TxnBloomFilter = bloomFilter.encode()
+		}
 	}
-
 	if sendTransactions {
 		if !s.isRelay {
 			// on non-relay, we need to filter out the non-locally originated messages since we don't want
@@ -122,7 +123,6 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		}
 		var txnGroups []transactions.SignedTxGroup
 		txnGroups, sentTxIDs = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round)
-
 		txMsg.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
 	}
 	/*if len(txnGroups) > 0 {
@@ -143,12 +143,12 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 	} else {
 		txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds())
 	}
-
 	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
 }
 
 func (s *syncState) evaluateOutgoingMessage(msg *messageSentCallback) {
 	msg.peer.updateMessageSent(msg.sentMessage, msg.sentTranscationsIDs, msg.sentTimestamp, msg.sequenceNumber, msg.encodedMessageSize)
+	s.log.Infof("Outgoing Txsync #%d round %d transacations %d request [%d/%d]", msg.sequenceNumber, msg.sentMessage.Round, len(msg.sentTranscationsIDs), msg.sentMessage.UpdatedRequestParams.Offset, msg.sentMessage.UpdatedRequestParams.Modulator)
 }
 
 // locallyGeneratedTransactions return a subset of the given transactionGroups array by filtering out transactions that are not locally generated.

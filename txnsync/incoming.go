@@ -114,6 +114,9 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		// update the round number if needed.
 		if txMsg.Round > peer.lastRound {
 			peer.lastRound = txMsg.Round
+		} else if txMsg.Round < peer.lastRound {
+			// peer sent us message for an older round, *after* a new round ?!
+			continue
 		}
 
 		// if the peer sent us a bloom filter, store this.
@@ -124,12 +127,13 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 			}
 		}
 		peer.updateRequestParams(txMsg.UpdatedRequestParams.Modulator, txMsg.UpdatedRequestParams.Offset)
-		peer.updateIncomingMessageTiming(txMsg.MsgSync, s.round, s.node.Clock().Since(), encodedSize)
+		peer.updateIncomingMessageTiming(txMsg.MsgSync, s.round, s.clock.Since(), encodedSize)
 
 		// if the peer's round is more than a single round behind the local node, then we don't want to
 		// try and load the transactions. The other peer should first catch up before getting transactions.
 		if (peer.lastRound + 1) < s.round {
 			//fmt.Printf("received message from old round %d\n", peer.lastRound)
+			s.log.Info("Incoming Txsync #%d late round %d", seq, peer.lastRound)
 			continue
 		}
 		txnGroups, err := decodeTransactionGroups(txMsg.TransactionGroups.Bytes)
@@ -142,16 +146,21 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		if len(txnGroups) > 0 {
 			//fmt.Printf("received transactions groups %d\n", len(txnGroups))
 		}
+
+		// add the received transaction groups to the peer's recentSentTransactions so that we won't be sending these back to the peer.
+		peer.updateIncomingTransactionGroups(txnGroups)
+
+		s.log.Infof("Incoming Txsync #%d round %d transacations %d request [%d/%d]", seq, txMsg.Round, len(txnGroups), txMsg.UpdatedRequestParams.Offset, txMsg.UpdatedRequestParams.Modulator)
 		messageProcessed = true
 	}
 	// if we're a relay, this is an outgoing peer and we've processed a valid message,
 	// then we want to respond right away as well as schedule bloom message.
 	if messageProcessed && peer.isOutgoing && s.isRelay {
-		/*deadlineMonitor := s.node.Clock().DeadlineMonitorAt(s.node.Clock().Since() + sendMessagesTime)
+		/*deadlineMonitor := s.clock.DeadlineMonitorAt(s.clock.Since() + sendMessagesTime)
 		s.sendMessageLoop(deadlineMonitor, []*Peer{peer})
 		peer.state = peerStateLateBloom
 		*/
 		peer.state = peerStateHoldsoff
-		s.scheduler.schedulerPeer(peer, s.node.Clock().Since())
+		s.scheduler.schedulerPeer(peer, s.clock.Since())
 	}
 }

@@ -133,7 +133,6 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 			break
 		}
 	}
-
 	return selectedTxns, selectedTxnIDs
 }
 
@@ -182,6 +181,17 @@ func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs 
 	p.lastSentMessageRound = txMsg.Round
 	p.lastSentMessageTimestamp = timestamp
 	p.lastSentMessageSize = messageSize
+}
+
+// update the recentSentTransactions with the incoming transaction groups. This would prevent us from sending the received transactions back to the
+// peer that sent it to us.
+func (p *Peer) updateIncomingTransactionGroups(txnGroups []transactions.SignedTxGroup) {
+	for _, txnGroup := range txnGroups {
+		if len(txnGroup.Transactions) > 0 {
+			txID := txnGroup.Transactions[0].ID()
+			p.recentSentTransactions.add(txID)
+		}
+	}
 }
 
 // setLocalRequestParams stores the peer request params.
