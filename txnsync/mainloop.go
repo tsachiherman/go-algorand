@@ -178,7 +178,7 @@ func (s *syncState) evaluatePeerStateChanges(currentTimeout time.Duration) {
 					sendMessagePeers++
 					peer.state = peerStateLateBloom
 					// todo - find the proper way to reschedule that from the peer's data.
-					//s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta*2)
+					s.scheduler.schedulerPeer(peer, peer.lastReceivedMessageTimestamp+peer.lastReceivedMessageNextMsgMinDelay/2)
 				case peerStateLateBloom:
 					// send just the bloom filter message.
 					// how ?

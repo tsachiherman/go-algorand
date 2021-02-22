@@ -72,10 +72,11 @@ type Peer struct {
 	lastSentMessageTimestamp      time.Duration
 	lastSentMessageSize           int
 
-	lastConfirmedMessageSeqReceived uint64 // the last message that was confirmed by the peer to have been accepted.
-	lastReceivedMessageLocalRound   basics.Round
-	lastReceivedMessageTimestamp    time.Duration
-	lastReceivedMessageSize         int
+	lastConfirmedMessageSeqReceived    uint64 // the last message that was confirmed by the peer to have been accepted.
+	lastReceivedMessageLocalRound      basics.Round
+	lastReceivedMessageTimestamp       time.Duration
+	lastReceivedMessageSize            int
+	lastReceivedMessageNextMsgMinDelay time.Duration
 
 	dataExchangeRate uint64 // the combined upload/download rate in bytes/second
 
@@ -93,7 +94,7 @@ func makePeer(networkPeer interface{}, isOutgoing bool) *Peer {
 	}
 }
 
-func (p *Peer) selectPendingMessages(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid) {
+func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid) {
 	// if peer is too far back, don't send it any transactions ( or if the peer is not interested in transactions )
 	if p.lastRound < round.SubSaturate(1) || p.requestedTransactionsModulator == 0 {
 		return nil, nil
@@ -169,7 +170,7 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 	p.lastReceivedMessageLocalRound = currentRound
 	p.lastReceivedMessageTimestamp = currentTime
 	p.lastReceivedMessageSize = incomingMessageSize
-
+	p.lastReceivedMessageNextMsgMinDelay = time.Duration(timings.NextMsgMinDelay) * time.Nanosecond
 }
 
 // update the peer once the message was sent successfully.

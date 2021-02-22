@@ -79,6 +79,25 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		Round:   s.round,
 	}
 
+	createBloomFilter := false
+	sendTransactions := false
+
+	// on outgoing peers of relays, we want have some custom logic.
+	if s.isRelay && peer.isOutgoing {
+		switch peer.state {
+		case peerStateStartup:
+			// we need to send just the bloom filter.
+			createBloomFilter = true
+		case peerStateLateBloom:
+			sendTransactions = true
+		default:
+			// todo - log
+		}
+	} else {
+		createBloomFilter = true
+		sendTransactions = true
+	}
+
 	if s.fetchTransactions {
 		// update the UpdatedRequestParams
 		offset, modulator := peer.getLocalRequestParams()
@@ -86,20 +105,26 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		if modulator > 0 {
 			txMsg.UpdatedRequestParams.Offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
 		}
+		createBloomFilter = true
+	}
+
+	if createBloomFilter {
 		// generate a bloom filter that matches the requests params.
 		bloomFilter := makeBloomFilter(txMsg.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
 		txMsg.TxnBloomFilter = bloomFilter.encode()
 	}
 
-	if !s.isRelay {
-		// on non-relay, we need to filter out the non-locally originated messages since we don't want
-		// non-relays to send transcation that they received via the transaction sync back.
-		pendingTransactions = locallyGeneratedTransactions(pendingTransactions)
-	}
-	var txnGroups []transactions.SignedTxGroup
-	txnGroups, sentTxIDs = peer.selectPendingMessages(pendingTransactions, messageTimeWindow, s.round)
+	if sendTransactions {
+		if !s.isRelay {
+			// on non-relay, we need to filter out the non-locally originated messages since we don't want
+			// non-relays to send transcation that they received via the transaction sync back.
+			pendingTransactions = locallyGeneratedTransactions(pendingTransactions)
+		}
+		var txnGroups []transactions.SignedTxGroup
+		txnGroups, sentTxIDs = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round)
 
-	txMsg.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
+		txMsg.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
+	}
 	/*if len(txnGroups) > 0 {
 		fmt.Printf("sent transactions groups %d (%d bytes)\n", len(txnGroups), len(txMsg.TransactionGroups.Bytes))
 	}*/
