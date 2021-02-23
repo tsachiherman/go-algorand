@@ -58,7 +58,7 @@ type scenario struct {
 	expectedResults emulatorResult
 }
 
-func TestEmulatedNonRelayToRelayTransactionsExchange(t *testing.T) {
+func TestEmulatedTrivialTransactionsExchange(t *testing.T) {
 	testScenario := scenario{
 		netConfig: networkConfiguration{
 			nodes: []nodeConfiguration{
@@ -104,19 +104,57 @@ func TestEmulatedNonRelayToRelayTransactionsExchange(t *testing.T) {
 			},
 		},
 	}
-	emulateScenario(t, testScenario)
+	t.Run("NonRelay_To_Relay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "node"
+		testScenario.initialAlloc[0].node = 1
+		emulateScenario(t, testScenario)
+	})
+	t.Run("Relay_To_NonRelay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "node"
+		testScenario.initialAlloc[0].node = 0
+		emulateScenario(t, testScenario)
+	})
+	t.Run("OutgoingRelay_To_IncomingRelay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "incoming-relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "outgoing-relay"
+		testScenario.netConfig.nodes[1].isRelay = true
+		testScenario.initialAlloc[0].node = 1
+		emulateScenario(t, testScenario)
+	})
+	t.Run("OutgoingRelay_To_IncomingRelay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "incoming-relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "outgoing-relay"
+		testScenario.netConfig.nodes[1].isRelay = true
+		testScenario.initialAlloc[0].node = 0
+		emulateScenario(t, testScenario)
+	})
 }
 
-func TestEmulatedRelayToNonRelayTransactionsExchange(t *testing.T) {
+func TestEmulatedTwoNodesToRelaysTransactionsExchange(t *testing.T) {
+	// this test creates the following network mode:
+	//
+	//       relay1 ---------->  relay2
+	//          ^                   ^
+	//          |                   |
+	//        node1               node2
+	//
+
 	testScenario := scenario{
 		netConfig: networkConfiguration{
 			nodes: []nodeConfiguration{
 				{
-					name:    "relay",
+					name:    "relay1",
 					isRelay: true,
 				},
 				{
-					name: "node",
+					name:    "relay2",
+					isRelay: true,
 					outgoingConnections: []connectionSettings{
 						{
 							uploadSpeed:   1000000,
@@ -125,12 +163,32 @@ func TestEmulatedRelayToNonRelayTransactionsExchange(t *testing.T) {
 						},
 					},
 				},
+				{
+					name: "node1",
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        0,
+						},
+					},
+				},
+				{
+					name: "node2",
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        1,
+						},
+					},
+				},
 			},
 		},
 		testDuration: 8500 * time.Millisecond,
 		initialAlloc: []initialTransactionsAllocation{
 			initialTransactionsAllocation{
-				node:              0,
+				node:              2,
 				transactionsCount: 1,
 				transactionSize:   250,
 				expirationRound:   basics.Round(5),
@@ -150,94 +208,6 @@ func TestEmulatedRelayToNonRelayTransactionsExchange(t *testing.T) {
 						transactionSize: 250,
 					},
 				},
-			},
-		},
-	}
-	emulateScenario(t, testScenario)
-}
-
-func TestEmulatedOutgoingRelayToRelayTransactionsExchange(t *testing.T) {
-	testScenario := scenario{
-		netConfig: networkConfiguration{
-			nodes: []nodeConfiguration{
-				{
-					name:    "incoming-relay",
-					isRelay: true,
-				},
-				{
-					name:    "outgoing-relay",
-					isRelay: true,
-					outgoingConnections: []connectionSettings{
-						{
-							uploadSpeed:   1000000,
-							downloadSpeed: 1000000,
-							target:        0,
-						},
-					},
-				},
-			},
-		},
-		testDuration: 8500 * time.Millisecond,
-		initialAlloc: []initialTransactionsAllocation{
-			initialTransactionsAllocation{
-				node:              1,
-				transactionsCount: 1,
-				transactionSize:   250,
-				expirationRound:   basics.Round(5),
-			},
-		},
-		expectedResults: emulatorResult{
-			nodes: []nodeTransactions{
-				{
-					nodeTransaction{
-						expirationRound: 5,
-						transactionSize: 250,
-					},
-				},
-				{
-					nodeTransaction{
-						expirationRound: 5,
-						transactionSize: 250,
-					},
-				},
-			},
-		},
-	}
-	emulateScenario(t, testScenario)
-}
-
-func TestEmulatedIncomingRelayToRelayTransactionsExchange(t *testing.T) {
-	testScenario := scenario{
-		netConfig: networkConfiguration{
-			nodes: []nodeConfiguration{
-				{
-					name:    "incoming-relay",
-					isRelay: true,
-				},
-				{
-					name:    "outgoing-relay",
-					isRelay: true,
-					outgoingConnections: []connectionSettings{
-						{
-							uploadSpeed:   1000000,
-							downloadSpeed: 1000000,
-							target:        0,
-						},
-					},
-				},
-			},
-		},
-		testDuration: 8500 * time.Millisecond,
-		initialAlloc: []initialTransactionsAllocation{
-			initialTransactionsAllocation{
-				node:              0,
-				transactionsCount: 1,
-				transactionSize:   250,
-				expirationRound:   basics.Round(5),
-			},
-		},
-		expectedResults: emulatorResult{
-			nodes: []nodeTransactions{
 				{
 					nodeTransaction{
 						expirationRound: 5,

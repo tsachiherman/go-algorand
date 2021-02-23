@@ -47,7 +47,7 @@ const (
 const escape = "\x1b"
 
 var colors = []int{red, green, yellow, blue, magenta, cyan, hired, higreen, hiyellow, hiblue, himagenta, hicyan}
-var low_colors = []int{red, green, yellow, blue, magenta, cyan}
+var lowColors = []int{red, green, yellow, blue, magenta, cyan}
 
 type emulatorNodeLogger struct {
 	logging.Logger
@@ -94,16 +94,20 @@ func (e emulatorNodeLogger) printMsg(s string, args ...interface{}) {
 		out += strings.Repeat(" ", e.longestName)
 	}
 
-	out += wrapLowColor(seq, " [ ")
-	mid := fmt.Sprintf("Round %s Txns %3d Req [%3d/%3d]",
-		wrapColor(round, fmt.Sprintf("%3d", round)),
-		transactions, offset, modulator)
+	mid := fmt.Sprintf("Round %s Txns %s Req [%3d/%3d]",
+		wrapRollingColor(round, fmt.Sprintf("%2d", round)),
+		wrapRollingColor(transactions, fmt.Sprintf("%3d", transactions)),
+		offset, modulator)
 	if s == incomingTxSyncMsgFormat {
-		out += strings.Repeat(" ", 20) + wrapColor(yellow, " <-- ") + mid
+		out += wrapColor(hiblack, " [ ")
+		out += strings.Repeat(" ", 20) + wrapRollingLowColor(seq, " <-- ") + mid
+		out += wrapRollingLowColor(seq, " ] ")
 	} else {
-		out += mid + wrapColor(hiyellow, " --> ") + strings.Repeat(" ", 20)
+		out += wrapRollingLowColor(seq, " [ ")
+		out += mid + wrapRollingLowColor(seq, " --> ") + strings.Repeat(" ", 20)
+		out += wrapColor(hiblack, " ] ")
 	}
-	out += wrapLowColor(seq, " ] ")
+
 	if s == outgoingTxSyncMsgFormat {
 		out += strings.Repeat(" ", e.longestName)
 	} else {
@@ -112,10 +116,13 @@ func (e emulatorNodeLogger) printMsg(s string, args ...interface{}) {
 	fmt.Printf("%s\n", out)
 }
 
-func wrapLowColor(color int, s string) (out string) {
-	return fmt.Sprintf("%s[1;%dm%s%s[1;%dm", escape, low_colors[color%len(low_colors)], s, escape, reset)
+func wrapRollingLowColor(color int, s string) (out string) {
+	return wrapColor(lowColors[color%len(lowColors)], s)
 }
 
+func wrapRollingColor(color int, s string) (out string) {
+	return wrapColor(colors[color%len(colors)], s)
+}
 func wrapColor(color int, s string) (out string) {
-	return fmt.Sprintf("%s[1;%dm%s%s[1;%dm", escape, colors[color%len(colors)], s, escape, reset)
+	return fmt.Sprintf("%s[1;%dm%s%s[1;%dm", escape, color, s, escape, reset)
 }

@@ -17,29 +17,18 @@
 package txnsync
 
 import (
+	"time"
+
 	"github.com/algorand/go-algorand/crypto"
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/transactions"
 	"github.com/algorand/go-algorand/util/timers"
 )
 
-/*
-
-// NodeConnector is used by the transaction sync for communicating with components external to the txnsync package.
-type NodeConnector interface {
-	Events() <-chan Event
-	CurrentRound() basics.Round // return the current round from the ledger.
-	Clock() timers.WallClock
-	Random(uint64) uint64
-	GetPeers() []PeerInfo
-	GetPeer(interface{}) PeerInfo // get a single peer given a network peer opaque interface
-	UpdatePeers([]*Peer, []interface{})
-	SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback)
-	GetPendingTransactionGroups() []transactions.SignedTxGroup
-	IncomingTransactionGroups(interface{}, []transactions.SignedTxGroup)
+type queuedMessage struct {
+	bytes   []byte
+	readyAt time.Duration
 }
-*/
-
 type networkPeer struct {
 	peer          *Peer
 	uploadSpeed   uint64
@@ -48,7 +37,7 @@ type networkPeer struct {
 	outSeq        uint64
 	inSeq         uint64
 	target        int
-	messageQ      [][]byte // incoming message queue
+	messageQ      []queuedMessage // incoming message queue
 }
 
 // emulatedNode implements the NodeConnector interface
@@ -158,7 +147,8 @@ func (n *emulatedNode) UpdatePeers(txPeers []*Peer, netPeers []interface{}) {
 func (n *emulatedNode) SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback) {
 	peer := netPeer.(*networkPeer)
 	otherNode := n.emulator.nodes[peer.target]
-	otherNode.peers[n.nodeIndex].messageQ = append(otherNode.peers[n.nodeIndex].messageQ, msg)
+	sendTime := time.Duration(len(msg)) * time.Second / time.Duration(peer.uploadSpeed)
+	otherNode.peers[n.nodeIndex].messageQ = append(otherNode.peers[n.nodeIndex].messageQ, queuedMessage{bytes: msg, readyAt: n.emulator.clock.Since() + sendTime})
 	callback(true, peer.outSeq)
 	peer.outSeq++
 }
@@ -170,20 +160,28 @@ func (n *emulatedNode) GetPendingTransactionGroups() []transactions.SignedTxGrou
 func (n *emulatedNode) IncomingTransactionGroups(peer interface{}, groups []transactions.SignedTxGroup) {
 	// add to transaction pool.
 	for _, group := range groups {
-		txID := group.Transactions[0].ID()
-		if !n.txpoolIds[txID] {
-			n.txpoolIds[txID] = true
-			n.txpoolEntries = append(n.txpoolEntries, group)
+		if group.Transactions[0].Txn.LastValid < n.emulator.currentRound {
+			continue
 		}
+		txID := group.Transactions[0].ID()
+		if n.txpoolIds[txID] {
+			continue
+		}
+		n.txpoolIds[txID] = true
+		n.txpoolEntries = append(n.txpoolEntries, group)
 	}
 }
 
 func (n *emulatedNode) step() {
 	msgHandler := n.emulator.syncers[n.nodeIndex].GetIncomingMessageHandler()
+	now := n.emulator.clock.Since()
 	// check if we have any pending network messages and forward them.
 	for _, peer := range n.peers {
 		for len(peer.messageQ) > 0 {
-			msgHandler(peer, peer.peer, peer.messageQ[0], peer.inSeq)
+			if peer.messageQ[0].readyAt > now {
+				break
+			}
+			msgHandler(peer, peer.peer, peer.messageQ[0].bytes, peer.inSeq)
 			peer.inSeq++
 			peer.messageQ = peer.messageQ[1:]
 		}
