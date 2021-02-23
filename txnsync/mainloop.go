@@ -60,8 +60,8 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	s.outgoingMessagesCallbackCh = make(chan *messageSentCallback, 1024)
 	s.scheduler.node = s.node
 	s.lastBeta = beta(0)
-	startRound := s.node.CurrentRound()
-	s.onNewRoundEvent(MakeNewRoundEvent(startRound, false))
+	roundSettings := s.node.GetCurrentRoundSettings()
+	s.onNewRoundEvent(MakeNewRoundEvent(roundSettings.Round, roundSettings.FetchTransactions))
 
 	externalEvents := s.node.Events()
 	var nextPeerStateCh <-chan time.Time
@@ -154,8 +154,8 @@ func (s *syncState) onNewRoundEvent(ent Event) {
 	}
 	s.scheduler.scheduleNewRound(newRoundPeers)
 	s.updatePeersRequestParams(peers)
-	s.round = ent.round
-	s.fetchTransactions = ent.fetchTransactions
+	s.round = ent.roundSettings.Round
+	s.fetchTransactions = ent.roundSettings.FetchTransactions
 	s.nextOffsetRollingCh = s.clock.TimeoutAt(kickoffTime + 2*s.lastBeta)
 }
 

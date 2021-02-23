@@ -95,8 +95,11 @@ func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
 func (n *emulatedNode) Events() <-chan Event {
 	return n.externalEvents
 }
-func (n *emulatedNode) CurrentRound() basics.Round {
-	return n.emulator.currentRound
+func (n *emulatedNode) GetCurrentRoundSettings() RoundSettings {
+	return RoundSettings{
+		Round:             n.emulator.currentRound,
+		FetchTransactions: true,
+	}
 
 }
 func (n *emulatedNode) Clock() timers.WallClock {

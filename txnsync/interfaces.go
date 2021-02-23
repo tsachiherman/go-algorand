@@ -30,13 +30,18 @@ const (
 	newRoundEvent               eventType = 2
 )
 
+// RoundSettings is used to communicate the transaction syncer setting for a specific round
+type RoundSettings struct {
+	Round             basics.Round
+	FetchTransactions bool // for non-relays that has no participation keys, there is no need to request transactions
+}
+
 // Event is an external triggering event
 type Event struct {
 	eventType
 
-	round               basics.Round
 	transactionPoolSize int
-	fetchTransactions   bool // for non-relays that has no participation keys, there is no need to request transactions
+	roundSettings       RoundSettings
 }
 
 // IncomingMessageHandler is the signature of the incoming message handler used by the transaction sync to receive network messages
@@ -55,14 +60,18 @@ type PeerInfo struct {
 // NodeConnector is used by the transaction sync for communicating with components external to the txnsync package.
 type NodeConnector interface {
 	Events() <-chan Event
-	CurrentRound() basics.Round // return the current round from the ledger.
+	GetCurrentRoundSettings() RoundSettings // return the current round settings from the node
 	Clock() timers.WallClock
 	Random(uint64) uint64
 	GetPeers() []PeerInfo
 	GetPeer(interface{}) PeerInfo // get a single peer given a network peer opaque interface
 	UpdatePeers([]*Peer, []interface{})
 	SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback)
+	// GetPendingTransactionGroups is called by the transaction sync when it needs to look into the transaction
+	// pool and get the updated set of pending transactions.
 	GetPendingTransactionGroups() []transactions.SignedTxGroup
+	// IncomingTransactionGroups is called by the transaction sync when transactions have been received and need
+	// to be stored in the transaction pool
 	IncomingTransactionGroups(interface{}, []transactions.SignedTxGroup)
 }
 
@@ -77,8 +86,10 @@ func MakeTranscationPoolChangeEvent(transactionPoolSize int) Event {
 // MakeNewRoundEvent creates an event for when a new round starts
 func MakeNewRoundEvent(roundNumber basics.Round, fetchTransactions bool) Event {
 	return Event{
-		eventType:         newRoundEvent,
-		round:             roundNumber,
-		fetchTransactions: fetchTransactions,
+		eventType: newRoundEvent,
+		roundSettings: RoundSettings{
+			Round:             roundNumber,
+			FetchTransactions: fetchTransactions,
+		},
 	}
 }

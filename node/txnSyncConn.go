@@ -52,8 +52,12 @@ func (tsnc *transcationSyncNodeConnector) Events() <-chan txnsync.Event {
 	return tsnc.eventsCh
 }
 
-func (tsnc *transcationSyncNodeConnector) CurrentRound() basics.Round {
-	return tsnc.node.ledger.Latest()
+func (tsnc *transcationSyncNodeConnector) GetCurrentRoundSettings() txnsync.RoundSettings {
+	round := tsnc.node.ledger.Latest()
+	return txnsync.RoundSettings{
+		Round:             round,
+		FetchTransactions: tsnc.node.accountManager.HasLiveKeys(round, round),
+	}
 }
 
 func (tsnc *transcationSyncNodeConnector) Random(rng uint64) uint64 {

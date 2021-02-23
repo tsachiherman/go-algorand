@@ -78,7 +78,7 @@ func TestEmulatedTrivialTransactionsExchange(t *testing.T) {
 				},
 			},
 		},
-		testDuration: 8500 * time.Millisecond,
+		testDuration: 500 * time.Millisecond,
 		initialAlloc: []initialTransactionsAllocation{
 			initialTransactionsAllocation{
 				node:              1,
@@ -185,7 +185,7 @@ func TestEmulatedTwoNodesToRelaysTransactionsExchange(t *testing.T) {
 				},
 			},
 		},
-		testDuration: 8500 * time.Millisecond,
+		testDuration: 1000 * time.Millisecond,
 		initialAlloc: []initialTransactionsAllocation{
 			initialTransactionsAllocation{
 				node:              2,
@@ -224,4 +224,80 @@ func TestEmulatedTwoNodesToRelaysTransactionsExchange(t *testing.T) {
 		},
 	}
 	emulateScenario(t, testScenario)
+}
+
+func TestEmulatedLargeSetTransactionsExchange(t *testing.T) {
+	testScenario := scenario{
+		netConfig: networkConfiguration{
+			nodes: []nodeConfiguration{
+				{
+					name:    "relay",
+					isRelay: true,
+				},
+				{
+					name: "node",
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        0,
+						},
+					},
+				},
+			},
+		},
+		testDuration: 1000 * time.Millisecond,
+		initialAlloc: []initialTransactionsAllocation{
+			initialTransactionsAllocation{
+				node:              1,
+				transactionsCount: 5,
+				transactionSize:   800,
+				expirationRound:   basics.Round(5),
+			},
+		},
+		expectedResults: emulatorResult{
+			nodes: []nodeTransactions{
+				{},
+				{},
+			},
+		},
+	}
+	// update the expected results to have the correct number of entries.
+	for i := 0; i < testScenario.initialAlloc[0].transactionsCount; i++ {
+		for n := range testScenario.expectedResults.nodes {
+			testScenario.expectedResults.nodes[n] = append(testScenario.expectedResults.nodes[n], nodeTransaction{expirationRound: testScenario.initialAlloc[0].expirationRound, transactionSize: testScenario.initialAlloc[0].transactionSize})
+		}
+	}
+
+	t.Run("NonRelay_To_Relay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "node"
+		testScenario.initialAlloc[0].node = 1
+		emulateScenario(t, testScenario)
+	})
+	/*
+		t.Run("Relay_To_NonRelay", func(t *testing.T) {
+			testScenario.netConfig.nodes[0].name = "relay"
+			testScenario.netConfig.nodes[0].isRelay = true
+			testScenario.netConfig.nodes[1].name = "node"
+			testScenario.initialAlloc[0].node = 0
+			emulateScenario(t, testScenario)
+		})
+		t.Run("OutgoingRelay_To_IncomingRelay", func(t *testing.T) {
+			testScenario.netConfig.nodes[0].name = "incoming-relay"
+			testScenario.netConfig.nodes[0].isRelay = true
+			testScenario.netConfig.nodes[1].name = "outgoing-relay"
+			testScenario.netConfig.nodes[1].isRelay = true
+			testScenario.initialAlloc[0].node = 1
+			emulateScenario(t, testScenario)
+		})
+		t.Run("OutgoingRelay_To_IncomingRelay", func(t *testing.T) {
+			testScenario.netConfig.nodes[0].name = "incoming-relay"
+			testScenario.netConfig.nodes[0].isRelay = true
+			testScenario.netConfig.nodes[1].name = "outgoing-relay"
+			testScenario.netConfig.nodes[1].isRelay = true
+			testScenario.initialAlloc[0].node = 0
+			emulateScenario(t, testScenario)
+		})*/
 }
