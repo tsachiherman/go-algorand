@@ -31,6 +31,7 @@ const (
 )
 
 // SyncMachineState defines the state of the transaction sync state machine.
+//msgp:ignore SyncMachineState
 type SyncMachineState int
 
 const (
