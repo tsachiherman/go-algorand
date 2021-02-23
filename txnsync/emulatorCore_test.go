@@ -28,7 +28,6 @@ import (
 	"github.com/algorand/go-algorand/data/transactions"
 	"github.com/algorand/go-algorand/logging"
 	"github.com/algorand/go-algorand/protocol"
-	"github.com/algorand/go-algorand/util/timers"
 )
 
 const roundDuration = 4 * time.Second
@@ -40,7 +39,8 @@ type emulator struct {
 	nodeCount    int
 	log          logging.Logger
 	currentRound basics.Round
-	clock        timers.WallClock
+	clock        *guidedClock
+	t            *testing.T
 }
 
 type nodeTransaction struct {
@@ -71,6 +71,7 @@ func emulateScenario(t *testing.T, scenario scenario) {
 		scenario:  scenario,
 		nodeCount: len(scenario.netConfig.nodes),
 		log:       logging.TestingLog(t),
+		t:         t,
 	}
 	e.initNodes()
 	e.run()
@@ -130,7 +131,7 @@ func (e *emulator) initNodes() {
 		e.nodes[i] = makeEmulatedNode(e, i)
 	}
 	for i := 0; i < e.nodeCount; i++ {
-		syncer := MakeTranscationSyncService(e.log, e.nodes[i], e.scenario.netConfig.nodes[i].isRelay)
+		syncer := MakeTranscationSyncService(makeNodeLogger(e.log, e.nodes[i]), e.nodes[i], e.scenario.netConfig.nodes[i].isRelay)
 		e.syncers = append(e.syncers, syncer)
 	}
 	for _, initAlloc := range e.scenario.initialAlloc {
@@ -163,6 +164,11 @@ func (e *emulator) collectResult() (result emulatorResult) {
 	for i, node := range e.nodes {
 		var txns nodeTransactions
 		for _, txnGroup := range node.txpoolEntries {
+			size := len(txnGroup.Transactions[0].Txn.Note)
+			exp := txnGroup.Transactions[0].Txn.LastValid
+			txns = append(txns, nodeTransaction{expirationRound: exp, transactionSize: size})
+		}
+		for _, txnGroup := range node.expiredTx {
 			size := len(txnGroup.Transactions[0].Txn.Note)
 			exp := txnGroup.Transactions[0].Txn.LastValid
 			txns = append(txns, nodeTransaction{expirationRound: exp, transactionSize: size})

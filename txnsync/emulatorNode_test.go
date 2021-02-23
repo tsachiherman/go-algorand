@@ -57,8 +57,10 @@ type emulatedNode struct {
 	emulator       *emulator
 	peers          map[int]*networkPeer
 	nodeIndex      int
+	expiredTx      []transactions.SignedTxGroup
 	txpoolEntries  []transactions.SignedTxGroup
 	txpoolIds      map[transactions.Txid]bool
+	name           string
 }
 
 func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
@@ -68,6 +70,7 @@ func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
 		externalEvents: make(chan Event, 10000),
 		nodeIndex:      nodeIdx,
 		txpoolIds:      make(map[transactions.Txid]bool),
+		name:           emulator.scenario.netConfig.nodes[nodeIdx].name,
 	}
 	// add outgoing connections
 	for _, conn := range emulator.scenario.netConfig.nodes[nodeIdx].outgoingConnections {
@@ -192,6 +195,14 @@ func (n *emulatedNode) onNewRound(round basics.Round, hasParticipationKeys bool)
 	fetchTransactions := hasParticipationKeys
 	if n.emulator.scenario.netConfig.nodes[n.nodeIndex].isRelay {
 		fetchTransactions = true
+	}
+
+	for i := len(n.txpoolEntries) - 1; i >= 0; i-- {
+		if n.txpoolEntries[i].Transactions[0].Txn.LastValid < round {
+			delete(n.txpoolIds, n.txpoolEntries[i].Transactions[0].ID())
+			n.expiredTx = append(n.expiredTx, n.txpoolEntries[i])
+			n.txpoolEntries = append(n.txpoolEntries[0:i], n.txpoolEntries[i+1:]...)
+		}
 	}
 
 	n.externalEvents <- MakeNewRoundEvent(round, fetchTransactions)

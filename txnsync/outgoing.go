@@ -28,6 +28,8 @@ var _ = fmt.Printf
 
 const messageTimeWindow = 20 * time.Millisecond
 
+var outgoingTxSyncMsgFormat = "Outgoing Txsync #%d round %d transacations %d request [%d/%d]"
+
 type messageSentCallback struct {
 	encodedMessageSize  int
 	sentTranscationsIDs []transactions.Txid
@@ -148,7 +150,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 
 func (s *syncState) evaluateOutgoingMessage(msg *messageSentCallback) {
 	msg.peer.updateMessageSent(msg.sentMessage, msg.sentTranscationsIDs, msg.sentTimestamp, msg.sequenceNumber, msg.encodedMessageSize)
-	s.log.Infof("Outgoing Txsync #%d round %d transacations %d request [%d/%d]", msg.sequenceNumber, msg.sentMessage.Round, len(msg.sentTranscationsIDs), msg.sentMessage.UpdatedRequestParams.Offset, msg.sentMessage.UpdatedRequestParams.Modulator)
+	s.log.Infof(outgoingTxSyncMsgFormat, msg.sequenceNumber, msg.sentMessage.Round, len(msg.sentTranscationsIDs), msg.sentMessage.UpdatedRequestParams.Offset, msg.sentMessage.UpdatedRequestParams.Modulator)
 }
 
 // locallyGeneratedTransactions return a subset of the given transactionGroups array by filtering out transactions that are not locally generated.
