@@ -17,6 +17,8 @@
 package txnsync
 
 import (
+	"fmt"
+	"sort"
 	"time"
 
 	"github.com/algorand/go-algorand/data/basics"
@@ -29,8 +31,8 @@ type peerState int
 
 const maxIncomingBloomFilterHistory = 20
 const recentTransactionsSentBufferLength = 10000
-const minDataExchangeRateThreshold = 100 * 1024        // 100KB/s, which is ~0.8Mbps
-const maxDataExchangeRateThreshold = 100 * 1024 * 1024 // 100Mbps
+const minDataExchangeRateThreshold = 100 * 1024            // 100KB/s, which is ~0.8Mbps
+const maxDataExchangeRateThreshold = 100 * 1024 * 1024 / 8 // 100Mbps
 const defaultDataExchangeRateThreshold = minDataExchangeRateThreshold
 
 const (
@@ -83,6 +85,10 @@ type Peer struct {
 	// these two fields describe "what does the local peer want the remote peer to send back"
 	localTransactionsModulator  byte
 	localTransactionsBaseOffset byte
+
+	// lastTransactionSelectionGroupCounter is the last transaction group counter that we've evaluated on the selectPendingTransactions method.
+	// it used to ensure that on subsequent calls, we won't need to scan the entire pending transactions array from the begining.
+	lastTransactionSelectionGroupCounter uint64
 }
 
 func makePeer(networkPeer interface{}, isOutgoing bool) *Peer {
@@ -94,17 +100,30 @@ func makePeer(networkPeer interface{}, isOutgoing bool) *Peer {
 	}
 }
 
-func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid) {
+func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid, partialTranscationsSet bool) {
 	// if peer is too far back, don't send it any transactions ( or if the peer is not interested in transactions )
 	if p.lastRound < round.SubSaturate(1) || p.requestedTransactionsModulator == 0 {
-		return nil, nil
+		return nil, nil, false
+	}
+	if len(pendingTransactions) == 0 {
+		return nil, nil, false
 	}
 
 	windowLengthBytes := int(uint64(sendWindow) * p.dataExchangeRate / uint64(time.Second))
 
 	accumulatedSize := 0
 	selectedTxnIDs = make([]transactions.Txid, 0, len(pendingTransactions))
-	for grpIdx := range pendingTransactions {
+
+	startIndex := sort.Search(len(pendingTransactions), func(i int) bool {
+		return pendingTransactions[i].GroupCounter >= p.lastTransactionSelectionGroupCounter
+	}) % len(pendingTransactions)
+
+	windowSizedReached := false
+	hasMorePendingTransactions := false
+
+	for scanIdx := range pendingTransactions {
+		grpIdx := (scanIdx + startIndex) % len(pendingTransactions)
+
 		// filter out transactions that we already previously sent.
 		txID := pendingTransactions[grpIdx].Transactions[0].ID()
 		if p.recentSentTransactions.contained(txID) {
@@ -120,6 +139,13 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 			}
 		}
 
+		p.lastTransactionSelectionGroupCounter = pendingTransactions[grpIdx].GroupCounter
+
+		if windowSizedReached {
+			hasMorePendingTransactions = true
+			fmt.Printf("selectPendingTransactions : selected %d transactions, and aborted after exceeding data length %d/%d\n", len(selectedTxnIDs), accumulatedSize, windowLengthBytes)
+			break
+		}
 		selectedTxns = append(selectedTxns, pendingTransactions[grpIdx])
 		selectedTxnIDs = append(selectedTxnIDs, txID)
 
@@ -130,10 +156,10 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 			protocol.PutEncodingBuf(encodingBuf)
 		}
 		if accumulatedSize > windowLengthBytes {
-			break
+			windowSizedReached = true
 		}
 	}
-	return selectedTxns, selectedTxnIDs
+	return selectedTxns, selectedTxnIDs, hasMorePendingTransactions
 }
 
 func (p *Peer) addIncomingBloomFilter(bf bloomFilter) {
@@ -164,6 +190,7 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 			}
 			// clamp data exchange rate to realistic metrics
 			p.dataExchangeRate = dataExchangeRate
+			//fmt.Printf("incoming message : updating data exchange to %d; network msg size = %d+%d, transmit time = %v\n", dataExchangeRate, p.lastSentMessageSize, incomingMessageSize, networkTrasmitTime)
 		}
 	}
 	p.lastReceivedMessageLocalRound = currentRound

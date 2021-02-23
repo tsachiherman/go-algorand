@@ -28,7 +28,7 @@ var _ = fmt.Printf
 
 const messageTimeWindow = 20 * time.Millisecond
 
-var outgoingTxSyncMsgFormat = "Outgoing Txsync #%d round %d transacations %d request [%d/%d]"
+var outgoingTxSyncMsgFormat = "Outgoing Txsync #%d round %d transacations %d request [%d/%d] bloom %d"
 
 type messageSentCallback struct {
 	encodedMessageSize  int
@@ -63,11 +63,26 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 	}
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
 	currentTime := s.clock.Since()
-	var encodedMessage []byte
+	var partialMessage bool
 	for _, peer := range peers {
 		msgCallback := &messageSentCallback{peer: peer, state: s}
-		encodedMessage, msgCallback.sentMessage, msgCallback.sentTranscationsIDs = s.assemblePeerMessage(peer, pendingTransactionGroups, currentTime)
+		msgCallback.sentMessage, msgCallback.sentTranscationsIDs, partialMessage = s.assemblePeerMessage(peer, pendingTransactionGroups, currentTime)
+		encodedMessage := msgCallback.sentMessage.MarshalMsg([]byte{})
+		msgCallback.encodedMessageSize = len(encodedMessage)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
+
+		if partialMessage {
+			// change peer scheduling
+			if peer.state == peerStateHoldsoff {
+				// remove current scheduling
+				s.scheduler.peerDuration(peer)
+				// add new scheduling
+				s.scheduler.schedulerPeer(peer, currentTime+messageTimeWindow)
+				// update state.
+				peer.state = peerStateStartup
+			}
+		}
+
 		if deadline.Expired() {
 			// we ran out of time sending messages, stop sending any more messages.
 			break
@@ -75,7 +90,7 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 	}
 }
 
-func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup, currentTime time.Duration) (encodedMessage []byte, txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid) {
+func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup, currentTime time.Duration) (txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid, partialMessage bool) {
 	txMsg = &transactionBlockMessage{
 		Version: txnBlockMessageVersion,
 		Round:   s.round,
@@ -124,7 +139,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 			pendingTransactions = locallyGeneratedTransactions(pendingTransactions)
 		}
 		var txnGroups []transactions.SignedTxGroup
-		txnGroups, sentTxIDs = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round)
+		txnGroups, sentTxIDs, partialMessage = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round)
 		txMsg.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
 	}
 	/*if len(txnGroups) > 0 {
@@ -145,12 +160,12 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 	} else {
 		txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds())
 	}
-	return txMsg.MarshalMsg([]byte{}), txMsg, sentTxIDs
+	return txMsg, sentTxIDs, partialMessage
 }
 
 func (s *syncState) evaluateOutgoingMessage(msg *messageSentCallback) {
 	msg.peer.updateMessageSent(msg.sentMessage, msg.sentTranscationsIDs, msg.sentTimestamp, msg.sequenceNumber, msg.encodedMessageSize)
-	s.log.Infof(outgoingTxSyncMsgFormat, msg.sequenceNumber, msg.sentMessage.Round, len(msg.sentTranscationsIDs), msg.sentMessage.UpdatedRequestParams.Offset, msg.sentMessage.UpdatedRequestParams.Modulator)
+	s.log.Infof(outgoingTxSyncMsgFormat, msg.sequenceNumber, msg.sentMessage.Round, len(msg.sentTranscationsIDs), msg.sentMessage.UpdatedRequestParams.Offset, msg.sentMessage.UpdatedRequestParams.Modulator, len(msg.sentMessage.TxnBloomFilter.BloomFilter))
 }
 
 // locallyGeneratedTransactions return a subset of the given transactionGroups array by filtering out transactions that are not locally generated.

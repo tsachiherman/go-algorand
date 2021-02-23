@@ -78,6 +78,7 @@ type TransactionPool struct {
 	pendingMu       deadlock.RWMutex
 	pendingTxGroups []transactions.SignedTxGroup
 	pendingTxids    map[transactions.Txid]transactions.SignedTxn
+	pendingCounter  uint64
 
 	// Calls to remember() add transactions to rememberedTxGroups and
 	// rememberedTxids.  Calling rememberCommit() adds them to the
@@ -222,6 +223,13 @@ func (pool *TransactionPool) rememberCommit(flush bool) {
 		pool.pendingTxids = pool.rememberedTxids
 		pool.ledger.VerifiedTransactionCache().UpdatePinned(pool.pendingTxids)
 	} else {
+		// update the GroupCounter on all the transaction groups we're going to add.
+		// this would ensure that each transaction group has a unique monotonic GroupCounter
+		for i, txGroup := range pool.rememberedTxGroups {
+			pool.pendingCounter++
+			txGroup.GroupCounter = pool.pendingCounter
+			pool.rememberedTxGroups[i] = txGroup
+		}
 		pool.pendingTxGroups = append(pool.pendingTxGroups, pool.rememberedTxGroups...)
 
 		for txid, txn := range pool.rememberedTxids {
@@ -417,6 +425,8 @@ func (pool *TransactionPool) ingest(txgroup transactions.SignedTxGroup, params p
 
 // Remember stores the provided transaction group.
 // Precondition: Only Remember() properly-signed and well-formed transactions (i.e., ensure t.WellFormed())
+// The function is called by the transaction handler ( i.e. txsync or gossip ) or by the node when
+// transaction is coming from a REST API call.
 func (pool *TransactionPool) Remember(txgroup transactions.SignedTxGroup) error {
 	if err := pool.checkPendingQueueSize(len(txgroup.Transactions)); err != nil {
 		return err

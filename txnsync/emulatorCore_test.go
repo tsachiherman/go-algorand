@@ -98,8 +98,8 @@ func (e *emulator) run() {
 			e.nextRound()
 			lastRoundStarted = guidedClock.Since()
 		}
-		time.Sleep(1 * time.Millisecond / 10)
-		guidedClock.Advance(1 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond / 100)
+		guidedClock.Advance(1 * time.Millisecond / 10)
 	}
 	// stop the nodes
 	e.stop()

@@ -77,7 +77,8 @@ func (e emulatorNodeLogger) printMsg(s string, args ...interface{}) {
 	var round int
 	var transactions int
 	var offset, modulator int
-	fmt.Sscanf(fmt.Sprintf("%v %v %v %v %v", args...), "%d %d %d %d %d", &seq, &round, &transactions, &offset, &modulator)
+	var bloom int
+	fmt.Sscanf(fmt.Sprintf("%v %v %v %v %v %v", args...), "%d %d %d %d %d %d", &seq, &round, &transactions, &offset, &modulator, &bloom)
 
 	if e.longestName == 0 {
 		for _, node := range e.node.emulator.nodes {
@@ -93,11 +94,17 @@ func (e emulatorNodeLogger) printMsg(s string, args ...interface{}) {
 	} else {
 		out += strings.Repeat(" ", e.longestName)
 	}
-
-	mid := fmt.Sprintf("Round %s Txns %s Req [%3d/%3d]",
+	bfColor := hiblack
+	if bloom > 0 {
+		bfColor = higreen
+	}
+	mid := fmt.Sprintf("Round %s Txns %s Req [%3d/%3d] %s",
 		wrapRollingColor(round, fmt.Sprintf("%2d", round)),
 		wrapRollingColor(transactions, fmt.Sprintf("%3d", transactions)),
-		offset, modulator)
+		offset,
+		modulator,
+		wrapColor(bfColor, "BF"),
+	)
 	if s == incomingTxSyncMsgFormat {
 		out += wrapColor(hiblack, " [ ")
 		out += strings.Repeat(" ", 20) + wrapRollingLowColor(seq, " <-- ") + mid
