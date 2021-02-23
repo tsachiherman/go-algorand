@@ -54,6 +54,7 @@ type initialTransactionsAllocation struct {
 type scenario struct {
 	netConfig       networkConfiguration
 	testDuration    time.Duration
+	step            time.Duration
 	initialAlloc    []initialTransactionsAllocation
 	expectedResults emulatorResult
 }
@@ -103,6 +104,7 @@ func TestEmulatedTrivialTransactionsExchange(t *testing.T) {
 				},
 			},
 		},
+		step: 1 * time.Millisecond,
 	}
 	t.Run("NonRelay_To_Relay", func(t *testing.T) {
 		testScenario.netConfig.nodes[0].name = "relay"
@@ -222,6 +224,7 @@ func TestEmulatedTwoNodesToRelaysTransactionsExchange(t *testing.T) {
 				},
 			},
 		},
+		step: 1 * time.Millisecond,
 	}
 	emulateScenario(t, testScenario)
 }
@@ -250,7 +253,7 @@ func TestEmulatedLargeSetTransactionsExchange(t *testing.T) {
 		initialAlloc: []initialTransactionsAllocation{
 			initialTransactionsAllocation{
 				node:              1,
-				transactionsCount: 5,
+				transactionsCount: 100,
 				transactionSize:   800,
 				expirationRound:   basics.Round(5),
 			},
@@ -261,6 +264,7 @@ func TestEmulatedLargeSetTransactionsExchange(t *testing.T) {
 				{},
 			},
 		},
+		step: 1 * time.Millisecond / 10,
 	}
 	// update the expected results to have the correct number of entries.
 	for i := 0; i < testScenario.initialAlloc[0].transactionsCount; i++ {

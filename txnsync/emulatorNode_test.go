@@ -132,7 +132,7 @@ func (n *emulatedNode) waitBlocked() {
 		if state == StateMachineBlocked {
 			return
 		}
-		//time.Sleep(100 * time.Nanosecond)
+		time.Sleep(100 * time.Nanosecond)
 	}
 }
 

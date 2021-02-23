@@ -30,14 +30,19 @@ const messageTimeWindow = 20 * time.Millisecond
 
 var outgoingTxSyncMsgFormat = "Outgoing Txsync #%d round %d transacations %d request [%d/%d] bloom %d"
 
-type messageSentCallback struct {
+type sentMessageMetadata struct {
 	encodedMessageSize  int
 	sentTranscationsIDs []transactions.Txid
-	sentMessage         *transactionBlockMessage
+	message             *transactionBlockMessage
 	peer                *Peer
-	state               *syncState
 	sentTimestamp       time.Duration
 	sequenceNumber      uint64
+	partialMessage      bool
+	filter              bloomFilter
+}
+type messageSentCallback struct {
+	state       *syncState
+	messageData sentMessageMetadata
 }
 
 // asyncMessageSent called via the network package to inform the txsync that a message was enqueued, and the associated sequence number.
@@ -46,8 +51,8 @@ func (msc *messageSentCallback) asyncMessageSent(enqueued bool, sequenceNumber u
 		return
 	}
 	// record the timestamp here, before placing the entry on the queue
-	msc.sentTimestamp = msc.state.clock.Since()
-	msc.sequenceNumber = sequenceNumber
+	msc.messageData.sentTimestamp = msc.state.clock.Since()
+	msc.messageData.sequenceNumber = sequenceNumber
 
 	select {
 	case msc.state.outgoingMessagesCallbackCh <- msc:
@@ -63,15 +68,15 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 	}
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
 	currentTime := s.clock.Since()
-	var partialMessage bool
+
 	for _, peer := range peers {
-		msgCallback := &messageSentCallback{peer: peer, state: s}
-		msgCallback.sentMessage, msgCallback.sentTranscationsIDs, partialMessage = s.assemblePeerMessage(peer, pendingTransactionGroups, currentTime)
-		encodedMessage := msgCallback.sentMessage.MarshalMsg([]byte{})
-		msgCallback.encodedMessageSize = len(encodedMessage)
+		msgCallback := &messageSentCallback{state: s}
+		msgCallback.messageData = s.assemblePeerMessage(peer, pendingTransactionGroups, currentTime)
+		encodedMessage := msgCallback.messageData.message.MarshalMsg([]byte{})
+		msgCallback.messageData.encodedMessageSize = len(encodedMessage)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
 
-		if partialMessage {
+		if msgCallback.messageData.partialMessage {
 			// change peer scheduling
 			if peer.state == peerStateHoldsoff {
 				// remove current scheduling
@@ -90,11 +95,18 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 	}
 }
 
-func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup, currentTime time.Duration) (txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid, partialMessage bool) {
-	txMsg = &transactionBlockMessage{
-		Version: txnBlockMessageVersion,
-		Round:   s.round,
+func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup, currentTime time.Duration) (metaMessage sentMessageMetadata) {
+	//(txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid, partialMessage bool) {
+	metaMessage = sentMessageMetadata{
+		peer: peer,
+		message: &transactionBlockMessage{
+			Version: txnBlockMessageVersion,
+			Round:   s.round,
+		},
+		//sentTranscationsIDs []transactions.Txid
+		//partialMessage      bool
 	}
+	//txMsg =
 
 	createBloomFilter := false
 	sendTransactions := false
@@ -118,20 +130,21 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 	if s.fetchTransactions {
 		// update the UpdatedRequestParams
 		offset, modulator := peer.getLocalRequestParams()
-		txMsg.UpdatedRequestParams.Modulator = modulator
+		metaMessage.message.UpdatedRequestParams.Modulator = modulator
 		if modulator > 0 {
-			txMsg.UpdatedRequestParams.Offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
+			metaMessage.message.UpdatedRequestParams.Offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
 		}
 		createBloomFilter = true
 	}
 
-	if createBloomFilter {
+	if createBloomFilter && len(pendingTransactions) > 0 {
 		// generate a bloom filter that matches the requests params.
-		if len(pendingTransactions) > 0 {
-			bloomFilter := makeBloomFilter(txMsg.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
-			txMsg.TxnBloomFilter = bloomFilter.encode()
+		metaMessage.filter = makeBloomFilter(metaMessage.message.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
+		if !metaMessage.filter.compare(peer.lastSentBloomFilter) {
+			metaMessage.message.TxnBloomFilter = metaMessage.filter.encode()
 		}
 	}
+
 	if sendTransactions {
 		if !s.isRelay {
 			// on non-relay, we need to filter out the non-locally originated messages since we don't want
@@ -139,33 +152,34 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 			pendingTransactions = locallyGeneratedTransactions(pendingTransactions)
 		}
 		var txnGroups []transactions.SignedTxGroup
-		txnGroups, sentTxIDs, partialMessage = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round)
-		txMsg.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
+		txnGroups, metaMessage.sentTranscationsIDs, metaMessage.partialMessage = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round)
+		metaMessage.message.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
 	}
 	/*if len(txnGroups) > 0 {
 		fmt.Printf("sent transactions groups %d (%d bytes)\n", len(txnGroups), len(txMsg.TransactionGroups.Bytes))
 	}*/
 
-	txMsg.MsgSync.RefTxnBlockMsgSeq = peer.nextReceivedMessageSeq - 1
+	metaMessage.message.MsgSync.RefTxnBlockMsgSeq = peer.nextReceivedMessageSeq - 1
 	if peer.lastReceivedMessageTimestamp != 0 && peer.lastReceivedMessageLocalRound == s.round {
-		txMsg.MsgSync.ResponseElapsedTime = uint64((currentTime - peer.lastReceivedMessageTimestamp).Nanoseconds())
+		metaMessage.message.MsgSync.ResponseElapsedTime = uint64((currentTime - peer.lastReceivedMessageTimestamp).Nanoseconds())
 	}
 
 	if s.isRelay {
 		if peer.isOutgoing {
-			txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) // todo - find a better way to caluclate this.
+			metaMessage.message.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) // todo - find a better way to caluclate this.
 		} else {
-			txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) * 2
+			metaMessage.message.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) * 2
 		}
 	} else {
-		txMsg.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds())
+		metaMessage.message.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds())
 	}
-	return txMsg, sentTxIDs, partialMessage
+	return metaMessage
 }
 
 func (s *syncState) evaluateOutgoingMessage(msg *messageSentCallback) {
-	msg.peer.updateMessageSent(msg.sentMessage, msg.sentTranscationsIDs, msg.sentTimestamp, msg.sequenceNumber, msg.encodedMessageSize)
-	s.log.Infof(outgoingTxSyncMsgFormat, msg.sequenceNumber, msg.sentMessage.Round, len(msg.sentTranscationsIDs), msg.sentMessage.UpdatedRequestParams.Offset, msg.sentMessage.UpdatedRequestParams.Modulator, len(msg.sentMessage.TxnBloomFilter.BloomFilter))
+	msgData := msg.messageData
+	msgData.peer.updateMessageSent(msgData.message, msgData.sentTranscationsIDs, msgData.sentTimestamp, msgData.sequenceNumber, msgData.encodedMessageSize, msgData.filter)
+	s.log.Infof(outgoingTxSyncMsgFormat, msgData.sequenceNumber, msgData.message.Round, len(msgData.sentTranscationsIDs), msgData.message.UpdatedRequestParams.Offset, msgData.message.UpdatedRequestParams.Modulator, len(msgData.message.TxnBloomFilter.BloomFilter))
 }
 
 // locallyGeneratedTransactions return a subset of the given transactionGroups array by filtering out transactions that are not locally generated.

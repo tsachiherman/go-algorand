@@ -99,7 +99,7 @@ func (e *emulator) run() {
 			lastRoundStarted = guidedClock.Since()
 		}
 		e.waitBlocked()
-		guidedClock.Advance(1 * time.Millisecond / 10)
+		guidedClock.Advance(e.scenario.step)
 		e.unblock()
 	}
 	// stop the nodes

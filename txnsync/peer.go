@@ -17,7 +17,7 @@
 package txnsync
 
 import (
-	"fmt"
+	//"fmt"
 	"sort"
 	"time"
 
@@ -73,6 +73,7 @@ type Peer struct {
 	lastSentMessageRound          basics.Round
 	lastSentMessageTimestamp      time.Duration
 	lastSentMessageSize           int
+	lastSentBloomFilter           bloomFilter
 
 	lastConfirmedMessageSeqReceived    uint64 // the last message that was confirmed by the peer to have been accepted.
 	lastReceivedMessageLocalRound      basics.Round
@@ -143,7 +144,7 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 
 		if windowSizedReached {
 			hasMorePendingTransactions = true
-			fmt.Printf("selectPendingTransactions : selected %d transactions, and aborted after exceeding data length %d/%d\n", len(selectedTxnIDs), accumulatedSize, windowLengthBytes)
+			//fmt.Printf("selectPendingTransactions : selected %d transactions, and aborted after exceeding data length %d/%d\n", len(selectedTxnIDs), accumulatedSize, windowLengthBytes)
 			break
 		}
 		selectedTxns = append(selectedTxns, pendingTransactions[grpIdx])
@@ -200,7 +201,7 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 }
 
 // update the peer once the message was sent successfully.
-func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs []transactions.Txid, timestamp time.Duration, sequenceNumber uint64, messageSize int) {
+func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs []transactions.Txid, timestamp time.Duration, sequenceNumber uint64, messageSize int, filter bloomFilter) {
 	for _, txid := range selectedTxnIDs {
 		p.recentSentTransactions.add(txid)
 	}
@@ -208,6 +209,9 @@ func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs 
 	p.lastSentMessageRound = txMsg.Round
 	p.lastSentMessageTimestamp = timestamp
 	p.lastSentMessageSize = messageSize
+	if filter.filter != nil {
+		p.lastSentBloomFilter = filter
+	}
 }
 
 // update the recentSentTransactions with the incoming transaction groups. This would prevent us from sending the received transactions back to the

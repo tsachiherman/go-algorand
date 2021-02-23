@@ -40,6 +40,8 @@ type bloomFilter struct {
 	encodingParams requestParams
 
 	filter *bloom.Filter
+
+	containedTxns []transactions.Txid
 }
 
 func decodeBloomFilter(enc encodedBloomFilter) (outFilter bloomFilter, err error) {
@@ -63,6 +65,21 @@ func (bf *bloomFilter) encode() (out encodedBloomFilter) {
 		out.BloomFilter, _ = bf.filter.MarshalBinary()
 	}
 	return
+}
+func (bf *bloomFilter) compare(other bloomFilter) bool {
+	if bf.encodingParams == other.encodingParams {
+		if bf.filter == nil && other.filter == nil {
+			return true
+		} else if bf.filter != nil && other.filter != nil && len(bf.containedTxns) == len(other.containedTxns) {
+			for i, txid := range bf.containedTxns {
+				if txid != other.containedTxns[i] {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.SignedTxGroup, shuffler uint32) (result bloomFilter) {
@@ -96,6 +113,7 @@ func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.Sign
 	for _, txid := range filtedTransactionsIDs {
 		result.filter.Set(txid[:])
 	}
+	result.containedTxns = filtedTransactionsIDs
 
 	return
 }
