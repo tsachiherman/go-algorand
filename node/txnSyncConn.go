@@ -60,6 +60,10 @@ func (tsnc *transcationSyncNodeConnector) GetCurrentRoundSettings() txnsync.Roun
 	}
 }
 
+// NotifyState is used for testing purposes only, and can remain empty on production code.
+func (tsnc *transcationSyncNodeConnector) NotifyState(updatedState txnsync.SyncMachineState) {
+}
+
 func (tsnc *transcationSyncNodeConnector) Random(rng uint64) uint64 {
 	return tsnc.node.Uint64() % rng
 }

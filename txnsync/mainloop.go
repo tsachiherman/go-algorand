@@ -80,15 +80,48 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 			case newRoundEvent:
 				s.onNewRoundEvent(ent)
 			}
+			continue
 		case <-nextPeerStateCh:
 			s.evaluatePeerStateChanges(nextPeerStateTime)
+			continue
 		case incomingMsg := <-s.incomingMessagesCh:
 			s.evaluateIncomingMessage(incomingMsg)
+			continue
 		case msgSent := <-s.outgoingMessagesCallbackCh:
 			s.evaluateOutgoingMessage(msgSent)
+			continue
 		case <-s.nextOffsetRollingCh:
 			s.rollOffsets()
+			continue
 		case <-serviceCtx.Done():
+			return
+		default:
+		}
+
+		s.node.NotifyState(StateMachineBlocked)
+		select {
+		case ent := <-externalEvents:
+			s.node.NotifyState(StateMachineRunning)
+			switch ent.eventType {
+			case transactionPoolChangedEvent:
+				s.onTransactionPoolChangedEvent(ent)
+			case newRoundEvent:
+				s.onNewRoundEvent(ent)
+			}
+		case <-nextPeerStateCh:
+			s.node.NotifyState(StateMachineRunning)
+			s.evaluatePeerStateChanges(nextPeerStateTime)
+		case incomingMsg := <-s.incomingMessagesCh:
+			s.node.NotifyState(StateMachineRunning)
+			s.evaluateIncomingMessage(incomingMsg)
+		case msgSent := <-s.outgoingMessagesCallbackCh:
+			s.node.NotifyState(StateMachineRunning)
+			s.evaluateOutgoingMessage(msgSent)
+		case <-s.nextOffsetRollingCh:
+			s.node.NotifyState(StateMachineRunning)
+			s.rollOffsets()
+		case <-serviceCtx.Done():
+			s.node.NotifyState(StateMachineRunning)
 			return
 		}
 	}

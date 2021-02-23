@@ -98,8 +98,9 @@ func (e *emulator) run() {
 			e.nextRound()
 			lastRoundStarted = guidedClock.Since()
 		}
-		time.Sleep(1 * time.Millisecond / 100)
+		e.waitBlocked()
 		guidedClock.Advance(1 * time.Millisecond / 10)
+		e.unblock()
 	}
 	// stop the nodes
 	e.stop()
@@ -123,6 +124,16 @@ func (e *emulator) start() {
 func (e *emulator) stop() {
 	for _, node := range e.syncers {
 		node.Stop()
+	}
+}
+func (e *emulator) waitBlocked() {
+	for _, node := range e.nodes {
+		node.waitBlocked()
+	}
+}
+func (e *emulator) unblock() {
+	for _, node := range e.nodes {
+		node.unblock()
 	}
 }
 func (e *emulator) initNodes() {

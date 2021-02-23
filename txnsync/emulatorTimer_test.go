@@ -19,6 +19,8 @@ package txnsync
 import (
 	"time"
 
+	"github.com/algorand/go-deadlock"
+
 	"github.com/algorand/go-algorand/util/timers"
 )
 
@@ -28,6 +30,7 @@ type guidedClock struct {
 	adv      time.Duration
 	timers   map[time.Duration]chan time.Time
 	children []*guidedClock
+	mu       deadlock.Mutex
 }
 
 func makeGuidedClock() *guidedClock {
@@ -41,6 +44,8 @@ func (g *guidedClock) Zero() timers.Clock {
 	child := &guidedClock{
 		zero: g.zero.Add(g.adv),
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.children = append(g.children, child)
 	return child
 }
@@ -96,6 +101,8 @@ func (g *guidedClock) Advance(adv time.Duration) {
 	for _, ch := range expiredClocks {
 		ch <- g.zero.Add(g.adv)
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	for _, child := range g.children {
 		child.Advance(adv)
 	}

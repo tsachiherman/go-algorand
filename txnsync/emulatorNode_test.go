@@ -19,6 +19,8 @@ package txnsync
 import (
 	"time"
 
+	"github.com/algorand/go-deadlock"
+
 	"github.com/algorand/go-algorand/crypto"
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/transactions"
@@ -38,6 +40,7 @@ type networkPeer struct {
 	inSeq         uint64
 	target        int
 	messageQ      []queuedMessage // incoming message queue
+	mu            deadlock.Mutex
 }
 
 // emulatedNode implements the NodeConnector interface
@@ -50,6 +53,9 @@ type emulatedNode struct {
 	txpoolEntries  []transactions.SignedTxGroup
 	txpoolIds      map[transactions.Txid]bool
 	name           string
+	state          SyncMachineState
+	blocked        chan struct{}
+	mu             deadlock.Mutex
 }
 
 func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
@@ -60,6 +66,7 @@ func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
 		nodeIndex:      nodeIdx,
 		txpoolIds:      make(map[transactions.Txid]bool),
 		name:           emulator.scenario.netConfig.nodes[nodeIdx].name,
+		state:          StateMachineRunning,
 	}
 	// add outgoing connections
 	for _, conn := range emulator.scenario.netConfig.nodes[nodeIdx].outgoingConnections {
@@ -95,6 +102,40 @@ func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
 func (n *emulatedNode) Events() <-chan Event {
 	return n.externalEvents
 }
+
+func (n *emulatedNode) NotifyState(updatedState SyncMachineState) {
+	n.mu.Lock()
+	n.state = updatedState
+	c := make(chan struct{})
+	if updatedState == StateMachineBlocked {
+		n.blocked = c
+	}
+	n.mu.Unlock()
+	if updatedState == StateMachineBlocked {
+		<-c
+	}
+}
+func (n *emulatedNode) unblock() {
+	n.mu.Lock()
+	if n.blocked != nil {
+		close(n.blocked)
+		n.blocked = nil
+	}
+	n.mu.Unlock()
+}
+
+func (n *emulatedNode) waitBlocked() {
+	for {
+		n.mu.Lock()
+		state := n.state
+		n.mu.Unlock()
+		if state == StateMachineBlocked {
+			return
+		}
+		//time.Sleep(100 * time.Nanosecond)
+	}
+}
+
 func (n *emulatedNode) GetCurrentRoundSettings() RoundSettings {
 	return RoundSettings{
 		Round:             n.emulator.currentRound,
@@ -147,11 +188,17 @@ func (n *emulatedNode) UpdatePeers(txPeers []*Peer, netPeers []interface{}) {
 	}
 }
 
+func (n *emulatedNode) enqueueMessage(from int, msg queuedMessage) {
+	n.peers[from].mu.Lock()
+	n.peers[from].messageQ = append(n.peers[from].messageQ, msg)
+	n.peers[from].mu.Unlock()
+}
+
 func (n *emulatedNode) SendPeerMessage(netPeer interface{}, msg []byte, callback SendMessageCallback) {
 	peer := netPeer.(*networkPeer)
 	otherNode := n.emulator.nodes[peer.target]
 	sendTime := time.Duration(len(msg)) * time.Second / time.Duration(peer.uploadSpeed)
-	otherNode.peers[n.nodeIndex].messageQ = append(otherNode.peers[n.nodeIndex].messageQ, queuedMessage{bytes: msg, readyAt: n.emulator.clock.Since() + sendTime})
+	otherNode.enqueueMessage(n.nodeIndex, queuedMessage{bytes: msg, readyAt: n.emulator.clock.Since() + sendTime})
 	callback(true, peer.outSeq)
 	peer.outSeq++
 }
@@ -180,6 +227,7 @@ func (n *emulatedNode) step() {
 	now := n.emulator.clock.Since()
 	// check if we have any pending network messages and forward them.
 	for _, peer := range n.peers {
+		peer.mu.Lock()
 		for len(peer.messageQ) > 0 {
 			if peer.messageQ[0].readyAt > now {
 				break
@@ -188,6 +236,7 @@ func (n *emulatedNode) step() {
 			peer.inSeq++
 			peer.messageQ = peer.messageQ[1:]
 		}
+		peer.mu.Unlock()
 	}
 
 }
