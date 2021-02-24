@@ -157,11 +157,11 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 	// if we're a relay, this is an outgoing peer and we've processed a valid message,
 	// then we want to respond right away as well as schedule bloom message.
 	if messageProcessed && peer.isOutgoing && s.isRelay {
-		/*deadlineMonitor := s.clock.DeadlineMonitorAt(s.clock.Since() + sendMessagesTime)
-		s.sendMessageLoop(deadlineMonitor, []*Peer{peer})
-		peer.state = peerStateLateBloom
-		*/
-		peer.state = peerStateHoldsoff
+		peer.state = peerStateStartup
+		// if we had another message coming from this peer previously, we need to ensure there are not scheduled tasks.
+		s.scheduler.peerDuration(peer)
+
 		s.scheduler.schedulerPeer(peer, s.clock.Since())
+
 	}
 }

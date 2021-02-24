@@ -147,7 +147,7 @@ func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
 	s.interruptablePeers = make(map[*Peer]bool)
 
 	deadlineMonitor := s.clock.DeadlineMonitorAt(s.clock.Since() + sendMessagesTime)
-	s.sendMessageLoop(deadlineMonitor, peers)
+	s.sendMessageLoop(s.clock.Since(), deadlineMonitor, peers)
 
 	currentTimeout := s.clock.Since()
 	for _, peer := range peers {
@@ -199,73 +199,26 @@ func (s *syncState) evaluatePeerStateChanges(currentTimeout time.Duration) {
 	}
 
 	sendMessagePeers := 0
-	if s.isRelay {
-		// on relays, peers don't go into peerStateInterrupt; instead, they consistently remain in peerStateHoldsoff with double the beta.
-		for _, peer := range peers {
-			if peer.isOutgoing {
-				// outgoing peers are "special", as they respond to messages rather then generating their own.
-				// we need to figure the special state needed for "late bloom filter message"
-				switch peer.state {
-				case peerStateHoldsoff:
-					// send a message, and reschedule for late bloom message.
-					// prepare the send message array.
-					peers[sendMessagePeers] = peer
-					sendMessagePeers++
-					peer.state = peerStateLateBloom
-					// todo - find the proper way to reschedule that from the peer's data.
-					s.scheduler.schedulerPeer(peer, peer.lastReceivedMessageTimestamp+peer.lastReceivedMessageNextMsgMinDelay/2)
-				case peerStateLateBloom:
-					// send just the bloom filter message.
-					// how ?
-
-					// reset peer state
-					peer.state = peerStateStartup
-				default:
-					// this isn't expected, so we can just ignore this.
-					// todo : log
-				}
-			} else {
-				switch peer.state {
-				case peerStateStartup:
-					peer.state = peerStateHoldsoff
-					fallthrough
-				case peerStateHoldsoff:
-					s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta*2)
-					// prepare the send message array.
-					peers[sendMessagePeers] = peer
-					sendMessagePeers++
-				default: // peerStateInterrupt & peerStateLateBloom
-					// this isn't expected, so we can just ignore this.
-					// todo : log
-				}
-			}
+	for _, peer := range peers {
+		op := peer.advancePeerState(currentTimeout, s.isRelay)
+		if (op & peerOpsSendMessage) == peerOpsSendMessage {
+			peers[sendMessagePeers] = peer
+			sendMessagePeers++
 		}
-	} else {
-		for _, peer := range peers {
-			switch peer.state {
-			case peerStateHoldsoff:
-				peer.state = peerStateInterrupt
-				s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
-				s.interruptablePeers[peer] = true
-			case peerStateStartup:
-				fallthrough
-			case peerStateInterrupt:
-				peer.state = peerStateHoldsoff
-				s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
-				// prepare the send message array.
-				peers[sendMessagePeers] = peer
-				sendMessagePeers++
-				delete(s.interruptablePeers, peer)
-			default: // peerStateLateBloom
-				// this isn't expected, so we can just ignore this.
-				// todo : log
-			}
+		if (op & peerOpsSetInterruptible) == peerOpsSetInterruptible {
+			s.interruptablePeers[peer] = true
+		}
+		if (op & peerOpsClearInterruptible) == peerOpsClearInterruptible {
+			delete(s.interruptablePeers, peer)
+		}
+		if (op & peerOpsReschedule) == peerOpsReschedule {
+			s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
 		}
 	}
 
 	peers = peers[:sendMessagePeers]
 	deadlineMonitor := s.clock.DeadlineMonitorAt(currentTimeout + sendMessagesTime)
-	s.sendMessageLoop(deadlineMonitor, peers)
+	s.sendMessageLoop(currentTimeout, deadlineMonitor, peers)
 }
 
 func (s *syncState) rollOffsets() {

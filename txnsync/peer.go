@@ -31,6 +31,9 @@ var _ = fmt.Printf
 //msgp:ignore peerState
 type peerState int
 
+//msgp:ignore peersOps
+type peersOps int
+
 const maxIncomingBloomFilterHistory = 20
 const recentTransactionsSentBufferLength = 10000
 const minDataExchangeRateThreshold = 100 * 1024            // 100KB/s, which is ~0.8Mbps
@@ -38,14 +41,20 @@ const maxDataExchangeRateThreshold = 100 * 1024 * 1024 / 8 // 100Mbps
 const defaultDataExchangeRateThreshold = minDataExchangeRateThreshold
 
 const (
-	// peerStateStartup is before the timeout for the sending the first message to the peer has reached
+	// peerStateStartup is before the timeout for the sending the first message to the peer has reached.
+	// for an outgoing peer, it means that an incoming message arrived, and one or more messages need to be sent out.
 	peerStateStartup peerState = iota
 	// peerStateHoldsoff is set once a message was sent to a peer, and we're holding off before sending additional messages.
 	peerStateHoldsoff
 	// peerStateInterrupt is set once the holdoff period for the peer have expired.
 	peerStateInterrupt
-	// peerStateLateBloom is set for outgoing peers on relays, indicating that the next message should be a bloom message.
+	// peerStateLateBloom is set for outgoing peers on relays, indicating that the next message should be a bloom filter only message.
 	peerStateLateBloom
+
+	peerOpsSendMessage        peersOps = 1
+	peerOpsSetInterruptible   peersOps = 2
+	peerOpsClearInterruptible peersOps = 4
+	peerOpsReschedule         peersOps = 8
 )
 
 // incomingBloomFilter stores an incoming bloom filter, along with the associated round number.
@@ -285,4 +294,104 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 	p.lastReceivedMessageTimestamp = currentTime
 	p.lastReceivedMessageSize = incomingMessageSize
 	p.lastReceivedMessageNextMsgMinDelay = time.Duration(timings.NextMsgMinDelay) * time.Nanosecond
+}
+
+// peer state changes
+func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops peersOps) {
+	if isRelay {
+		if p.isOutgoing {
+			// outgoing peers are "special", as they respond to messages rather then generating their own.
+			// we need to figure the special state needed for "late bloom filter message"
+			switch p.state {
+			case peerStateStartup:
+				messagesCount := p.lastReceivedMessageNextMsgMinDelay / messageTimeWindow
+				if messagesCount <= 1 {
+					// we have time to send only a single message. This message need to include both transactions and bloom filter.
+					p.state = peerStateLateBloom
+				} else {
+					// we have enough time to send multiple messages, make the first n-1 message have no bloom filter, and have the last one
+					// include a bloom filter.
+					p.state = peerStateHoldsoff
+				}
+
+				// send a message
+				ops |= peerOpsSendMessage
+			case peerStateHoldsoff:
+				// calculate how more messages we can send ( if needed )
+				messagesCount := (p.lastReceivedMessageTimestamp + p.lastReceivedMessageNextMsgMinDelay - currenTime) / messageTimeWindow
+				if messagesCount <= 1 {
+					// we have time to send only a single message. This message need to include both transactions and bloom filter.
+					p.state = peerStateLateBloom
+				}
+
+				// send a message
+				ops |= peerOpsSendMessage
+
+				// the rescehduling would be done in the sendMessageLoop, since we need to know if additional messages are needed.
+			case peerStateLateBloom:
+				// send a message
+				ops |= peerOpsSendMessage
+
+			default:
+				// this isn't expected, so we can just ignore this.
+				// todo : log
+			}
+		} else {
+			// non-outgoing
+			switch p.state {
+			case peerStateStartup:
+				p.state = peerStateHoldsoff
+				fallthrough
+			case peerStateHoldsoff:
+				// prepare the send message array.
+				ops |= peerOpsSendMessage
+			default: // peerStateInterrupt & peerStateLateBloom
+				// this isn't expected, so we can just ignore this.
+				// todo : log
+			}
+		}
+	} else {
+		switch p.state {
+		case peerStateHoldsoff:
+			p.state = peerStateInterrupt
+			ops |= peerOpsReschedule | peerOpsSetInterruptible
+		case peerStateStartup:
+			fallthrough
+		case peerStateInterrupt:
+			p.state = peerStateHoldsoff
+			ops |= peerOpsSendMessage | peerOpsClearInterruptible
+		default: // peerStateLateBloom
+			// this isn't expected, so we can just ignore this.
+			// todo : log
+		}
+	}
+	return
+}
+
+func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMessage bool) time.Duration {
+	if partialMessage {
+		if isRelay {
+			if p.isOutgoing {
+				if p.state == peerStateHoldsoff {
+					// we have enough time to send another message.
+					return messageTimeWindow
+				}
+			} else {
+				return messageTimeWindow
+			}
+		} else {
+			// update state.
+			p.state = peerStateStartup
+			return messageTimeWindow
+		}
+	} else {
+		if isRelay {
+			if !p.isOutgoing {
+				return beta * 2
+			}
+		} else {
+			return beta
+		}
+	}
+	return time.Duration(0)
 }

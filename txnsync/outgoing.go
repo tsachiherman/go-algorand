@@ -61,13 +61,12 @@ func (msc *messageSentCallback) asyncMessageSent(enqueued bool, sequenceNumber u
 	}
 }
 
-func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Peer) {
+func (s *syncState) sendMessageLoop(currentTime time.Duration, deadline timers.DeadlineMonitor, peers []*Peer) {
 	if len(peers) == 0 {
 		// no peers - no messages that need to be sent.
 		return
 	}
 	pendingTransactionGroups := s.node.GetPendingTransactionGroups()
-	currentTime := s.clock.Since()
 
 	for _, peer := range peers {
 		msgCallback := &messageSentCallback{state: s}
@@ -76,16 +75,9 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 		msgCallback.messageData.encodedMessageSize = len(encodedMessage)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
 
-		if msgCallback.messageData.partialMessage {
-			// change peer scheduling
-			if peer.state == peerStateHoldsoff {
-				// remove current scheduling
-				s.scheduler.peerDuration(peer)
-				// add new scheduling
-				s.scheduler.schedulerPeer(peer, currentTime+messageTimeWindow)
-				// update state.
-				peer.state = peerStateStartup
-			}
+		scheduleOffset := peer.getNextScheduleOffset(s.isRelay, s.lastBeta, msgCallback.messageData.partialMessage)
+		if scheduleOffset > time.Duration(0) {
+			s.scheduler.schedulerPeer(peer, currentTime+scheduleOffset)
 		}
 
 		if deadline.Expired() {
@@ -96,17 +88,13 @@ func (s *syncState) sendMessageLoop(deadline timers.DeadlineMonitor, peers []*Pe
 }
 
 func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transactions.SignedTxGroup, currentTime time.Duration) (metaMessage sentMessageMetadata) {
-	//(txMsg *transactionBlockMessage, sentTxIDs []transactions.Txid, partialMessage bool) {
 	metaMessage = sentMessageMetadata{
 		peer: peer,
 		message: &transactionBlockMessage{
 			Version: txnBlockMessageVersion,
 			Round:   s.round,
 		},
-		//sentTranscationsIDs []transactions.Txid
-		//partialMessage      bool
 	}
-	//txMsg =
 
 	createBloomFilter := false
 	sendTransactions := false
@@ -117,13 +105,19 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		case peerStateStartup:
 			// we need to send just the bloom filter.
 			createBloomFilter = true
+			//fmt.Printf("assembling message on outgoing relay : sending bloom, no tx\n")
 		case peerStateLateBloom:
 			sendTransactions = true
+			createBloomFilter = true
+			//fmt.Printf("assembling message on outgoing relay : sending tx & bloom\n")
+		case peerStateHoldsoff:
+			sendTransactions = true
+			//fmt.Printf("assembling message on outgoing relay : sending tx, no bloom\n")
 		default:
 			// todo - log
 		}
 	} else {
-		createBloomFilter = true
+		createBloomFilter = s.fetchTransactions
 		sendTransactions = true
 	}
 
@@ -134,7 +128,6 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		if modulator > 0 {
 			metaMessage.message.UpdatedRequestParams.Offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
 		}
-		createBloomFilter = true
 	}
 
 	if createBloomFilter && len(pendingTransactions) > 0 {
