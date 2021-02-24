@@ -124,7 +124,7 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		if txMsg.TxnBloomFilter.BloomFilterType != 0 {
 			bloomFilter, err := decodeBloomFilter(txMsg.TxnBloomFilter)
 			if err == nil {
-				peer.addIncomingBloomFilter(bloomFilter)
+				peer.addIncomingBloomFilter(txMsg.Round, bloomFilter, s.round)
 			}
 		}
 		peer.updateRequestParams(txMsg.UpdatedRequestParams.Modulator, txMsg.UpdatedRequestParams.Offset)

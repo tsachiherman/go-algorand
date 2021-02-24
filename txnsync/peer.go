@@ -17,7 +17,7 @@
 package txnsync
 
 import (
-	//"fmt"
+	"fmt"
 	"sort"
 	"time"
 
@@ -25,6 +25,8 @@ import (
 	"github.com/algorand/go-algorand/data/transactions"
 	"github.com/algorand/go-algorand/protocol"
 )
+
+var _ = fmt.Printf
 
 //msgp:ignore peerState
 type peerState int
@@ -46,6 +48,13 @@ const (
 	peerStateLateBloom
 )
 
+// incomingBloomFilter stores an incoming bloom filter, along with the associated round number.
+// the round number allow us to prune filters from rounds n-2 and below.
+type incomingBloomFilter struct {
+	filter bloomFilter
+	round  basics.Round
+}
+
 // Peer contains peer-related data which extends the data "known" and managed by the network package.
 type Peer struct {
 	// networkPeer is the network package exported peer. It's created on construction and never change afterward.
@@ -62,7 +71,7 @@ type Peer struct {
 
 	nextReceivedMessageSeq uint64 // the next message seq that we expect to recieve from that peer; implies that all previous messages have been accepted.
 
-	recentIncomingBloomFilters []bloomFilter
+	recentIncomingBloomFilters []incomingBloomFilter
 	recentSentTransactions     *transactionLru
 
 	// these two fields describe "what does that peer asked us to send it"
@@ -100,6 +109,8 @@ func makePeer(networkPeer interface{}, isOutgoing bool) *Peer {
 		dataExchangeRate:       defaultDataExchangeRateThreshold,
 	}
 }
+
+// outgoing related methods :
 
 func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid, partialTranscationsSet bool) {
 	// if peer is too far back, don't send it any transactions ( or if the peer is not interested in transactions )
@@ -140,11 +151,17 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 			}
 		}
 
+		// check if the peer alrady received these messages from a different source other than us.
+		for filterIdx := len(p.recentIncomingBloomFilters) - 1; filterIdx >= 0; filterIdx-- {
+			if p.recentIncomingBloomFilters[filterIdx].filter.test(txID) {
+				continue
+			}
+		}
+
 		p.lastTransactionSelectionGroupCounter = pendingTransactions[grpIdx].GroupCounter
 
 		if windowSizedReached {
 			hasMorePendingTransactions = true
-			//fmt.Printf("selectPendingTransactions : selected %d transactions, and aborted after exceeding data length %d/%d\n", len(selectedTxnIDs), accumulatedSize, windowLengthBytes)
 			break
 		}
 		selectedTxns = append(selectedTxns, pendingTransactions[grpIdx])
@@ -160,10 +177,69 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 			windowSizedReached = true
 		}
 	}
+	//fmt.Printf("selectPendingTransactions : selected %d transactions, and aborted after exceeding data length %d/%d more = %v\n", len(selectedTxnIDs), accumulatedSize, windowLengthBytes, hasMorePendingTransactions)
+
 	return selectedTxns, selectedTxnIDs, hasMorePendingTransactions
 }
 
-func (p *Peer) addIncomingBloomFilter(bf bloomFilter) {
+// getLocalRequestParams returns the local requests params
+func (p *Peer) getLocalRequestParams() (offset, modulator byte) {
+	return p.localTransactionsBaseOffset, p.localTransactionsModulator
+}
+
+// update the peer once the message was sent successfully.
+func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs []transactions.Txid, timestamp time.Duration, sequenceNumber uint64, messageSize int, filter bloomFilter) {
+	for _, txid := range selectedTxnIDs {
+		p.recentSentTransactions.add(txid)
+	}
+	p.lastSentMessageSequenceNumber = sequenceNumber
+	p.lastSentMessageRound = txMsg.Round
+	p.lastSentMessageTimestamp = timestamp
+	p.lastSentMessageSize = messageSize
+	if filter.filter != nil {
+		p.lastSentBloomFilter = filter
+	}
+}
+
+// setLocalRequestParams stores the peer request params.
+func (p *Peer) setLocalRequestParams(offset, modulator uint64) {
+	if modulator > 255 {
+		modulator = 255
+	}
+	p.localTransactionsModulator = byte(modulator)
+	if modulator != 0 {
+		p.localTransactionsBaseOffset = byte(offset % modulator)
+	}
+}
+
+// peers array functions
+
+// incomingPeersOnly scan the input peers array and return a subset of the peers that are incoming peers.
+func incomingPeersOnly(peers []*Peer) (incomingPeers []*Peer) {
+	incomingPeers = make([]*Peer, 0, len(peers))
+	for _, peer := range peers {
+		if !peer.isOutgoing {
+			incomingPeers = append(incomingPeers, peer)
+		}
+	}
+	return
+}
+
+// incoming related functions
+
+func (p *Peer) addIncomingBloomFilter(round basics.Round, incomingFilter bloomFilter, currentRound basics.Round) {
+	bf := incomingBloomFilter{
+		round:  round,
+		filter: incomingFilter,
+	}
+	// scan the current list and find if we can removed entries.
+	firstValidEntry := sort.Search(len(p.recentIncomingBloomFilters), func(i int) bool {
+		return p.recentIncomingBloomFilters[i].round >= currentRound.SubSaturate(1)
+	})
+	if firstValidEntry < len(p.recentIncomingBloomFilters) {
+		// delete some of the old entries.
+		p.recentIncomingBloomFilters = p.recentIncomingBloomFilters[firstValidEntry:]
+	}
 	p.recentIncomingBloomFilters = append(p.recentIncomingBloomFilters, bf)
 	if len(p.recentIncomingBloomFilters) > maxIncomingBloomFilterHistory {
 		p.recentIncomingBloomFilters = p.recentIncomingBloomFilters[1:]
@@ -172,6 +248,17 @@ func (p *Peer) addIncomingBloomFilter(bf bloomFilter) {
 
 func (p *Peer) updateRequestParams(modulator, offset byte) {
 	p.requestedTransactionsModulator, p.requestedTransactionsOffset = modulator, offset
+}
+
+// update the recentSentTransactions with the incoming transaction groups. This would prevent us from sending the received transactions back to the
+// peer that sent it to us.
+func (p *Peer) updateIncomingTransactionGroups(txnGroups []transactions.SignedTxGroup) {
+	for _, txnGroup := range txnGroups {
+		if len(txnGroup.Transactions) > 0 {
+			txID := txnGroup.Transactions[0].ID()
+			p.recentSentTransactions.add(txID)
+		}
+	}
 }
 
 func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound basics.Round, currentTime time.Duration, incomingMessageSize int) {
@@ -198,56 +285,4 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 	p.lastReceivedMessageTimestamp = currentTime
 	p.lastReceivedMessageSize = incomingMessageSize
 	p.lastReceivedMessageNextMsgMinDelay = time.Duration(timings.NextMsgMinDelay) * time.Nanosecond
-}
-
-// update the peer once the message was sent successfully.
-func (p *Peer) updateMessageSent(txMsg *transactionBlockMessage, selectedTxnIDs []transactions.Txid, timestamp time.Duration, sequenceNumber uint64, messageSize int, filter bloomFilter) {
-	for _, txid := range selectedTxnIDs {
-		p.recentSentTransactions.add(txid)
-	}
-	p.lastSentMessageSequenceNumber = sequenceNumber
-	p.lastSentMessageRound = txMsg.Round
-	p.lastSentMessageTimestamp = timestamp
-	p.lastSentMessageSize = messageSize
-	if filter.filter != nil {
-		p.lastSentBloomFilter = filter
-	}
-}
-
-// update the recentSentTransactions with the incoming transaction groups. This would prevent us from sending the received transactions back to the
-// peer that sent it to us.
-func (p *Peer) updateIncomingTransactionGroups(txnGroups []transactions.SignedTxGroup) {
-	for _, txnGroup := range txnGroups {
-		if len(txnGroup.Transactions) > 0 {
-			txID := txnGroup.Transactions[0].ID()
-			p.recentSentTransactions.add(txID)
-		}
-	}
-}
-
-// setLocalRequestParams stores the peer request params.
-func (p *Peer) setLocalRequestParams(offset, modulator uint64) {
-	if modulator > 255 {
-		modulator = 255
-	}
-	p.localTransactionsModulator = byte(modulator)
-	if modulator != 0 {
-		p.localTransactionsBaseOffset = byte(offset % modulator)
-	}
-}
-
-// getLocalRequestParams returns the local requests params
-func (p *Peer) getLocalRequestParams() (offset, modulator byte) {
-	return p.localTransactionsBaseOffset, p.localTransactionsModulator
-}
-
-// imcomingPeersOnly scan the input peers array and return a subset of the peers that are incoming peers.
-func imcomingPeersOnly(peers []*Peer) (incomingPeers []*Peer) {
-	incomingPeers = make([]*Peer, 0, len(peers))
-	for _, peer := range peers {
-		if !peer.isOutgoing {
-			incomingPeers = append(incomingPeers, peer)
-		}
-	}
-	return
 }

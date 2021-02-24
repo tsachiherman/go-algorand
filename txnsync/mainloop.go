@@ -183,7 +183,7 @@ func (s *syncState) onNewRoundEvent(ent Event) {
 	if s.isRelay {
 		// on relays, outgoing peers have a difference scheduling, which is based on the incoming message timing
 		// rather then a priodic message transmission.
-		newRoundPeers = imcomingPeersOnly(newRoundPeers)
+		newRoundPeers = incomingPeersOnly(newRoundPeers)
 	}
 	s.scheduler.scheduleNewRound(newRoundPeers)
 	s.updatePeersRequestParams(peers)

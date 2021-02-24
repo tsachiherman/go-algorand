@@ -36,12 +36,17 @@ const (
 	// xorBloomFilter - todo.
 )
 
+type transactionsRange struct {
+	firstCounter      uint64
+	lastCounter       uint64
+	transactionsCount uint64
+}
 type bloomFilter struct {
 	encodingParams requestParams
 
 	filter *bloom.Filter
 
-	containedTxns []transactions.Txid
+	containedTxnsRange transactionsRange
 }
 
 func decodeBloomFilter(enc encodedBloomFilter) (outFilter bloomFilter, err error) {
@@ -67,17 +72,12 @@ func (bf *bloomFilter) encode() (out encodedBloomFilter) {
 	return
 }
 func (bf *bloomFilter) compare(other bloomFilter) bool {
-	if bf.encodingParams == other.encodingParams {
-		if bf.filter == nil && other.filter == nil {
-			return true
-		} else if bf.filter != nil && other.filter != nil && len(bf.containedTxns) == len(other.containedTxns) {
-			for i, txid := range bf.containedTxns {
-				if txid != other.containedTxns[i] {
-					return false
-				}
-			}
-			return true
-		}
+	return (bf.encodingParams == other.encodingParams) && (bf.containedTxnsRange == other.containedTxnsRange)
+}
+
+func (bf *bloomFilter) test(txID transactions.Txid) bool {
+	if bf.filter != nil {
+		return bf.filter.Test(txID[:])
 	}
 	return false
 }
@@ -94,6 +94,10 @@ func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.Sign
 		filtedTransactionsIDs = make([]transactions.Txid, 0, len(txnGroups))
 		for _, group := range txnGroups {
 			filtedTransactionsIDs = append(filtedTransactionsIDs, group.Transactions[0].ID())
+		}
+		if len(txnGroups) > 0 {
+			result.containedTxnsRange.firstCounter = txnGroups[0].GroupCounter
+			result.containedTxnsRange.lastCounter = txnGroups[len(txnGroups)-1].GroupCounter
 		}
 	default:
 		// we want subset.
@@ -113,7 +117,7 @@ func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.Sign
 	for _, txid := range filtedTransactionsIDs {
 		result.filter.Set(txid[:])
 	}
-	result.containedTxns = filtedTransactionsIDs
+	result.containedTxnsRange.transactionsCount = uint64(len(filtedTransactionsIDs))
 
 	return
 }
