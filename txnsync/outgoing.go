@@ -40,6 +40,7 @@ type sentMessageMetadata struct {
 	partialMessage      bool
 	filter              bloomFilter
 }
+
 type messageSentCallback struct {
 	state       *syncState
 	messageData sentMessageMetadata

@@ -23,9 +23,9 @@ import (
 	"github.com/algorand/go-algorand/util/bloom"
 )
 
-var errInvalidBloomFilterEncoding = errors.New("invalid bloom filter encoding")
-
 const bloomFilterFalsePositiveRate = 0.01
+
+var errInvalidBloomFilterEncoding = errors.New("invalid bloom filter encoding")
 
 //msgp:ignore bloomFilterTypes
 type bloomFilterTypes byte

@@ -84,6 +84,8 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 			peer = makePeer(message.networkPeer, peerInfo.IsOutgoing)
 			// let the network peer object know about our peer
 			s.node.UpdatePeers([]*Peer{peer}, []interface{}{message.networkPeer})
+		} else {
+			peer = peerInfo.TxnSyncPeer
 		}
 		err := peer.incomingMessages.enqueue(message.message, message.sequenceNumber, message.encodedSize)
 		if err != nil {
