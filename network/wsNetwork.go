@@ -1706,7 +1706,7 @@ func (wn *WebsocketNetwork) pingThread() {
 		wn.log.Debugf("ping %d peers...", len(sendList))
 		for _, peer := range sendList {
 			if !peer.sendPing() {
-				// if we failed to send a ping, see how long it was since last successfull ping.
+				// if we failed to send a ping, see how long it was since last successful ping.
 				lastPingSent, _ := peer.pingTimes()
 				wn.log.Infof("failed to ping to %v for the past %f seconds", peer, time.Now().Sub(lastPingSent).Seconds())
 			}
