@@ -161,11 +161,16 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 		}
 
 		// check if the peer alrady received these messages from a different source other than us.
+		alreadyReceived := false
 		for filterIdx := len(p.recentIncomingBloomFilters) - 1; filterIdx >= 0; filterIdx-- {
 			if p.recentIncomingBloomFilters[filterIdx].filter.test(txID) {
 				//removedTxn++
-				continue
+				alreadyReceived = true
+				break
 			}
+		}
+		if alreadyReceived {
+			continue
 		}
 
 		p.lastTransactionSelectionGroupCounter = pendingTransactions[grpIdx].GroupCounter

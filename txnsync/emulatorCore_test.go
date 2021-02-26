@@ -85,10 +85,18 @@ func emulateScenario(t *testing.T, scenario scenario) {
 	for n := range results.nodes {
 		sort.Stable(results.nodes[n])
 	}
-	require.Equal(t, scenario.expectedResults, results)
+
 	t.Logf("Emulation Statistics:")
 	t.Logf("Total duplicate message count: %d", e.totalDuplicateMessages)
 	t.Logf("Total duplicate message size: %d", e.totalDuplicateMessageSize)
+	for n := 0; n < e.nodeCount; n++ {
+		t.Logf("%s message count : %d", e.nodes[n].name, len(results.nodes[n]))
+	}
+	for n := 0; n < e.nodeCount; n++ {
+		require.Equalf(t, len(scenario.expectedResults.nodes[n]), len(results.nodes[n]), "node %d", n)
+	}
+	require.Equal(t, scenario.expectedResults, results)
+	require.Equal(t, 1, 1)
 }
 
 func (e *emulator) run() {

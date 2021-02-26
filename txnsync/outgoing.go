@@ -101,21 +101,25 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 	sendTransactions := false
 
 	// on outgoing peers of relays, we want have some custom logic.
-	if s.isRelay && peer.isOutgoing {
-		switch peer.state {
-		case peerStateStartup:
-			// we need to send just the bloom filter.
-			createBloomFilter = true
-			//fmt.Printf("assembling message on outgoing relay : sending bloom, no tx\n")
-		case peerStateLateBloom:
+	if s.isRelay {
+		if peer.isOutgoing {
+			switch peer.state {
+			case peerStateStartup:
+				// we need to send just the bloom filter.
+				createBloomFilter = true
+				//fmt.Printf("assembling message on outgoing relay : sending bloom, no tx\n")
+			case peerStateLateBloom:
+				sendTransactions = true
+				createBloomFilter = true
+				//fmt.Printf("assembling message on outgoing relay : sending tx & bloom\n")
+			case peerStateHoldsoff:
+				sendTransactions = true
+				//fmt.Printf("assembling message on outgoing relay : sending tx, no bloom\n")
+			default:
+				// todo - log
+			}
+		} else {
 			sendTransactions = true
-			createBloomFilter = true
-			//fmt.Printf("assembling message on outgoing relay : sending tx & bloom\n")
-		case peerStateHoldsoff:
-			sendTransactions = true
-			//fmt.Printf("assembling message on outgoing relay : sending tx, no bloom\n")
-		default:
-			// todo - log
 		}
 	} else {
 		createBloomFilter = s.fetchTransactions
