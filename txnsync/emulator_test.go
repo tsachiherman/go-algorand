@@ -307,3 +307,189 @@ func TestEmulatedLargeSetTransactionsExchange(t *testing.T) {
 		emulateScenario(t, testScenario)
 	})
 }
+
+func TestEmulatedLargeSetTransactionsExchangeIntermixed(t *testing.T) {
+	testScenario := scenario{
+		netConfig: networkConfiguration{
+			nodes: []nodeConfiguration{
+				{
+					name:    "relay",
+					isRelay: true,
+				},
+				{
+					name: "node",
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        0,
+						},
+					},
+				},
+			},
+		},
+		initialAlloc: []initialTransactionsAllocation{
+			initialTransactionsAllocation{
+				node:              0,
+				transactionsCount: 200,
+				transactionSize:   400,
+				expirationRound:   basics.Round(5),
+			},
+			initialTransactionsAllocation{
+				node:              1,
+				transactionsCount: 100,
+				transactionSize:   800,
+				expirationRound:   basics.Round(5),
+			},
+		},
+		expectedResults: emulatorResult{
+			nodes: []nodeTransactions{
+				{},
+				{},
+			},
+		},
+		step:         1 * time.Millisecond / 10,
+		testDuration: 1000 * time.Millisecond,
+	}
+	// update the expected results to have the correct number of entries.
+	for j := range testScenario.initialAlloc {
+		for i := 0; i < testScenario.initialAlloc[j].transactionsCount; i++ {
+			for n := range testScenario.expectedResults.nodes {
+				testScenario.expectedResults.nodes[n] = append(testScenario.expectedResults.nodes[n], nodeTransaction{expirationRound: testScenario.initialAlloc[j].expirationRound, transactionSize: testScenario.initialAlloc[j].transactionSize})
+			}
+		}
+	}
+
+	t.Run("NonRelay_To_Relay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "node"
+		testScenario.initialAlloc[0].node = 1
+		emulateScenario(t, testScenario)
+	})
+
+	t.Run("Relay_To_NonRelay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "node"
+		testScenario.initialAlloc[0].node = 0
+		emulateScenario(t, testScenario)
+	})
+
+	t.Run("OutgoingRelay_To_IncomingRelay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "incoming-relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "outgoing-relay"
+		testScenario.netConfig.nodes[1].isRelay = true
+		testScenario.initialAlloc[0].node = 1
+		emulateScenario(t, testScenario)
+	})
+
+	t.Run("OutgoingRelay_To_IncomingRelay", func(t *testing.T) {
+		testScenario.netConfig.nodes[0].name = "incoming-relay"
+		testScenario.netConfig.nodes[0].isRelay = true
+		testScenario.netConfig.nodes[1].name = "outgoing-relay"
+		testScenario.netConfig.nodes[1].isRelay = true
+		testScenario.initialAlloc[0].node = 0
+		emulateScenario(t, testScenario)
+	})
+}
+
+func TestEmulatedNonRelayToMultipleRelays(t *testing.T) {
+	testScenario := scenario{
+		netConfig: networkConfiguration{
+			nodes: []nodeConfiguration{
+				{
+					name:    "relay-1",
+					isRelay: true,
+				},
+				{
+					name:    "relay-2",
+					isRelay: true,
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        0,
+						},
+					},
+				},
+				{
+					name:    "relay-3",
+					isRelay: true,
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        1,
+						},
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        0,
+						},
+					},
+				},
+				{
+					name: "node-1",
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        0,
+						},
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        1,
+						},
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        2,
+						},
+					},
+				},
+				{
+					name: "node-2",
+					outgoingConnections: []connectionSettings{
+						{
+							uploadSpeed:   1000000,
+							downloadSpeed: 1000000,
+							target:        2,
+						},
+					},
+				},
+			},
+		},
+		initialAlloc: []initialTransactionsAllocation{
+			initialTransactionsAllocation{
+				node:              4,
+				transactionsCount: 1000,
+				transactionSize:   250,
+				expirationRound:   basics.Round(5),
+			},
+		},
+		expectedResults: emulatorResult{
+			nodes: []nodeTransactions{
+				{},
+				{},
+				{},
+				{},
+				{},
+			},
+		},
+		step:         1 * time.Millisecond / 10,
+		testDuration: 1500 * time.Millisecond,
+	}
+	// update the expected results to have the correct number of entries.
+	for j := range testScenario.initialAlloc {
+		for i := 0; i < testScenario.initialAlloc[j].transactionsCount; i++ {
+			for n := range testScenario.expectedResults.nodes {
+				testScenario.expectedResults.nodes[n] = append(testScenario.expectedResults.nodes[n], nodeTransaction{expirationRound: testScenario.initialAlloc[j].expirationRound, transactionSize: testScenario.initialAlloc[j].transactionSize})
+			}
+		}
+	}
+
+	emulateScenario(t, testScenario)
+}

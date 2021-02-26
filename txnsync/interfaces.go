@@ -85,7 +85,7 @@ type NodeConnector interface {
 	GetPendingTransactionGroups() []transactions.SignedTxGroup
 	// IncomingTransactionGroups is called by the transaction sync when transactions have been received and need
 	// to be stored in the transaction pool
-	IncomingTransactionGroups(interface{}, []transactions.SignedTxGroup)
+	IncomingTransactionGroups(interface{}, []transactions.SignedTxGroup) (transactionPoolSize int)
 	NotifyState(SyncMachineState)
 }
 

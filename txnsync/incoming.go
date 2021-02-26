@@ -94,6 +94,7 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		}
 	}
 	messageProcessed := false
+	transacationPoolSize := 0
 	for {
 		seq, err := peer.incomingMessages.peekSequence()
 		if err != nil {
@@ -145,10 +146,7 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 			fmt.Printf("received transactions groups failed %v\n", err)
 			continue
 		}
-		s.node.IncomingTransactionGroups(peer.networkPeer, txnGroups)
-		if len(txnGroups) > 0 {
-			//fmt.Printf("received transactions groups %d\n", len(txnGroups))
-		}
+		transacationPoolSize = s.node.IncomingTransactionGroups(peer.networkPeer, txnGroups)
 
 		// add the received transaction groups to the peer's recentSentTransactions so that we won't be sending these back to the peer.
 		peer.updateIncomingTransactionGroups(txnGroups)
@@ -164,6 +162,8 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		s.scheduler.peerDuration(peer)
 
 		s.scheduler.schedulerPeer(peer, s.clock.Since())
-
+	}
+	if transacationPoolSize > 0 {
+		s.onTransactionPoolChangedEvent(MakeTranscationPoolChangeEvent(transacationPoolSize))
 	}
 }

@@ -199,12 +199,16 @@ func (tsnc *transcationSyncNodeConnector) stop() {
 
 }
 
-func (tsnc *transcationSyncNodeConnector) IncomingTransactionGroups(networkPeer interface{}, txGroups []transactions.SignedTxGroup) {
+func (tsnc *transcationSyncNodeConnector) IncomingTransactionGroups(networkPeer interface{}, txGroups []transactions.SignedTxGroup) (transactionPoolSize int) {
+	defer func() {
+		transactionPoolSize = tsnc.node.transactionPool.PendingCount()
+	}()
 	for _, txGroup := range txGroups {
 		if err := tsnc.txHandler.Handle(txGroup.Transactions); err != nil {
 			// we had some failuire, disconnect from peer.
 			tsnc.node.net.Disconnect(networkPeer)
-			return
+			break
 		}
 	}
+	return
 }

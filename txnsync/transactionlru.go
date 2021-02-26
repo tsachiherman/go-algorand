@@ -21,6 +21,7 @@ import (
 )
 
 // transactionLru keeps the most recently accessed transactions ids, allowing to limit the size of the historical kept transactions.
+// implementation is a simple cyclic-buffer with a map to accelerate lookups.
 type transactionLru struct {
 	size            int
 	transactionsIDs []transactions.Txid

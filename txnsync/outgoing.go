@@ -127,6 +127,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		offset, modulator := peer.getLocalRequestParams()
 		metaMessage.message.UpdatedRequestParams.Modulator = modulator
 		if modulator > 0 {
+			// for relays, the modulator is always one, which means the following would always be zero.
 			metaMessage.message.UpdatedRequestParams.Offset = byte((s.requestsOffset + uint64(offset)) % uint64(modulator))
 		}
 	}

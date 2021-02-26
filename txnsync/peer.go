@@ -280,6 +280,7 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 			networkTrasmitTime := timeSinceLastMessageWasSent - time.Duration(timings.ResponseElapsedTime)
 			networkMessageSize := uint64(p.lastSentMessageSize + incomingMessageSize)
 			dataExchangeRate := uint64(time.Second) * networkMessageSize / uint64(networkTrasmitTime)
+			dataExchangeRate *= 10
 			if dataExchangeRate < minDataExchangeRateThreshold {
 				dataExchangeRate = minDataExchangeRateThreshold
 			} else if dataExchangeRate > maxDataExchangeRateThreshold {

@@ -17,6 +17,7 @@
 package txnsync
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/algorand/go-deadlock"
@@ -207,19 +208,25 @@ func (n *emulatedNode) GetPendingTransactionGroups() []transactions.SignedTxGrou
 	return n.txpoolEntries
 }
 
-func (n *emulatedNode) IncomingTransactionGroups(peer interface{}, groups []transactions.SignedTxGroup) {
+func (n *emulatedNode) IncomingTransactionGroups(peer interface{}, groups []transactions.SignedTxGroup) (transactionPoolSize int) {
 	// add to transaction pool.
+	duplicateMessage := 0
 	for _, group := range groups {
 		if group.Transactions[0].Txn.LastValid < n.emulator.currentRound {
 			continue
 		}
 		txID := group.Transactions[0].ID()
 		if n.txpoolIds[txID] {
+			duplicateMessage++
 			continue
 		}
 		n.txpoolIds[txID] = true
 		n.txpoolEntries = append(n.txpoolEntries, group)
 	}
+	if duplicateMessage > 0 {
+		fmt.Printf("%s : %d duplicate messages recieved\n", n.name, duplicateMessage)
+	}
+	return len(n.txpoolEntries)
 }
 
 func (n *emulatedNode) step() {
