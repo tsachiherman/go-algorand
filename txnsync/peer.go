@@ -142,6 +142,7 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 	windowSizedReached := false
 	hasMorePendingTransactions := false
 
+	//removedTxn := 0
 	for scanIdx := range pendingTransactions {
 		grpIdx := (scanIdx + startIndex) % len(pendingTransactions)
 
@@ -154,8 +155,7 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 
 		// check if the peer would be interested in these messages -
 		if p.requestedTransactionsModulator > 1 {
-			txidValue := uint64(txID[0]) + (uint64(txID[1]) << 8) + (uint64(txID[2]) << 16) + (uint64(txID[3]) << 24) + (uint64(txID[4]) << 32) + (uint64(txID[5]) << 40) + (uint64(txID[6]) << 48) + (uint64(txID[7]) << 56)
-			if txidValue%uint64(p.requestedTransactionsModulator) != uint64(p.requestedTransactionsOffset) {
+			if txidToUint64(txID)%uint64(p.requestedTransactionsModulator) != uint64(p.requestedTransactionsOffset) {
 				continue
 			}
 		}
@@ -163,6 +163,7 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 		// check if the peer alrady received these messages from a different source other than us.
 		for filterIdx := len(p.recentIncomingBloomFilters) - 1; filterIdx >= 0; filterIdx-- {
 			if p.recentIncomingBloomFilters[filterIdx].filter.test(txID) {
+				//removedTxn++
 				continue
 			}
 		}
@@ -186,7 +187,7 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 			windowSizedReached = true
 		}
 	}
-	//fmt.Printf("selectPendingTransactions : selected %d transactions, and aborted after exceeding data length %d/%d more = %v\n", len(selectedTxnIDs), accumulatedSize, windowLengthBytes, hasMorePendingTransactions)
+	//fmt.Printf("selectPendingTransactions : selected %d transactions, %d not needed and aborted after exceeding data length %d/%d more = %v\n", len(selectedTxnIDs), removedTxn, accumulatedSize, windowLengthBytes, hasMorePendingTransactions)
 
 	return selectedTxns, selectedTxnIDs, hasMorePendingTransactions
 }
@@ -280,7 +281,7 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 			networkTrasmitTime := timeSinceLastMessageWasSent - time.Duration(timings.ResponseElapsedTime)
 			networkMessageSize := uint64(p.lastSentMessageSize + incomingMessageSize)
 			dataExchangeRate := uint64(time.Second) * networkMessageSize / uint64(networkTrasmitTime)
-			dataExchangeRate *= 10
+
 			if dataExchangeRate < minDataExchangeRateThreshold {
 				dataExchangeRate = minDataExchangeRateThreshold
 			} else if dataExchangeRate > maxDataExchangeRateThreshold {

@@ -179,11 +179,13 @@ func (s *syncState) evaluateOutgoingMessage(msg *messageSentCallback) {
 
 // locallyGeneratedTransactions return a subset of the given transactionGroups array by filtering out transactions that are not locally generated.
 func locallyGeneratedTransactions(transactionGroups []transactions.SignedTxGroup) (result []transactions.SignedTxGroup) {
-	result = make([]transactions.SignedTxGroup, 0, len(transactionGroups))
+	result = make([]transactions.SignedTxGroup, len(transactionGroups))
+	count := 0
 	for _, txnGroup := range transactionGroups {
 		if txnGroup.LocallyOriginated {
-			result = append(result, txnGroup)
+			result[count] = txnGroup
+			count++
 		}
 	}
-	return transactionGroups
+	return result[:count]
 }

@@ -18,6 +18,7 @@ package txnsync
 
 import (
 	"errors"
+	"math"
 
 	"github.com/algorand/go-algorand/data/transactions"
 	"github.com/algorand/go-algorand/util/bloom"
@@ -77,6 +78,11 @@ func (bf *bloomFilter) compare(other bloomFilter) bool {
 
 func (bf *bloomFilter) test(txID transactions.Txid) bool {
 	if bf.filter != nil {
+		if bf.encodingParams.Modulator > 1 {
+			if txidToUint64(txID)%uint64(bf.encodingParams.Modulator) != uint64(bf.encodingParams.Offset) {
+				return false
+			}
+		}
 		return bf.filter.Test(txID[:])
 	}
 	return false
@@ -101,14 +107,18 @@ func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.Sign
 		}
 	default:
 		// we want subset.
+		result.containedTxnsRange.firstCounter = math.MaxUint64
 		filtedTransactionsIDs = make([]transactions.Txid, 0, len(txnGroups))
 		for _, group := range txnGroups {
 			txID := group.Transactions[0].ID()
-			txidValue := uint64(txID[0]) + (uint64(txID[1]) << 8) + (uint64(txID[2]) << 16) + (uint64(txID[3]) << 24) + (uint64(txID[4]) << 32) + (uint64(txID[5]) << 40) + (uint64(txID[6]) << 48) + (uint64(txID[7]) << 56)
-			if txidValue%uint64(encodingParams.Modulator) != uint64(encodingParams.Offset) {
+			if txidToUint64(txID)%uint64(encodingParams.Modulator) != uint64(encodingParams.Offset) {
 				continue
 			}
 			filtedTransactionsIDs = append(filtedTransactionsIDs, txID)
+			if result.containedTxnsRange.firstCounter == math.MaxUint64 {
+				result.containedTxnsRange.firstCounter = group.GroupCounter
+			}
+			result.containedTxnsRange.lastCounter = group.GroupCounter
 		}
 	}
 
@@ -120,4 +130,8 @@ func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.Sign
 	result.containedTxnsRange.transactionsCount = uint64(len(filtedTransactionsIDs))
 
 	return
+}
+
+func txidToUint64(txID transactions.Txid) uint64 {
+	return uint64(txID[0]) + (uint64(txID[1]) << 8) + (uint64(txID[2]) << 16) + (uint64(txID[3]) << 24) + (uint64(txID[4]) << 32) + (uint64(txID[5]) << 40) + (uint64(txID[6]) << 48) + (uint64(txID[7]) << 56)
 }

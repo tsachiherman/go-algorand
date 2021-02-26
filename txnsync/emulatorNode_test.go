@@ -18,6 +18,7 @@ package txnsync
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/algorand/go-deadlock"
@@ -46,17 +47,18 @@ type networkPeer struct {
 
 // emulatedNode implements the NodeConnector interface
 type emulatedNode struct {
-	externalEvents chan Event
-	emulator       *emulator
-	peers          map[int]*networkPeer
-	nodeIndex      int
-	expiredTx      []transactions.SignedTxGroup
-	txpoolEntries  []transactions.SignedTxGroup
-	txpoolIds      map[transactions.Txid]bool
-	name           string
-	state          SyncMachineState
-	blocked        chan struct{}
-	mu             deadlock.Mutex
+	externalEvents     chan Event
+	emulator           *emulator
+	peers              map[int]*networkPeer
+	nodeIndex          int
+	expiredTx          []transactions.SignedTxGroup
+	txpoolEntries      []transactions.SignedTxGroup
+	txpoolIds          map[transactions.Txid]bool
+	name               string
+	state              SyncMachineState
+	blocked            chan struct{}
+	mu                 deadlock.Mutex
+	txpoolGroupCounter uint64
 }
 
 func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
@@ -211,6 +213,7 @@ func (n *emulatedNode) GetPendingTransactionGroups() []transactions.SignedTxGrou
 func (n *emulatedNode) IncomingTransactionGroups(peer interface{}, groups []transactions.SignedTxGroup) (transactionPoolSize int) {
 	// add to transaction pool.
 	duplicateMessage := 0
+	duplicateMessageSize := 0
 	for _, group := range groups {
 		if group.Transactions[0].Txn.LastValid < n.emulator.currentRound {
 			continue
@@ -218,14 +221,19 @@ func (n *emulatedNode) IncomingTransactionGroups(peer interface{}, groups []tran
 		txID := group.Transactions[0].ID()
 		if n.txpoolIds[txID] {
 			duplicateMessage++
+			duplicateMessageSize += len(group.Transactions[0].Txn.Note)
 			continue
 		}
 		n.txpoolIds[txID] = true
+		group.GroupCounter = n.txpoolGroupCounter
+		n.txpoolGroupCounter++
 		n.txpoolEntries = append(n.txpoolEntries, group)
 	}
 	if duplicateMessage > 0 {
 		fmt.Printf("%s : %d duplicate messages recieved\n", n.name, duplicateMessage)
 	}
+	atomic.AddUint64(&n.emulator.totalDuplicateMessages, uint64(duplicateMessage))
+	atomic.AddUint64(&n.emulator.totalDuplicateMessageSize, uint64(duplicateMessageSize))
 	return len(n.txpoolEntries)
 }
 

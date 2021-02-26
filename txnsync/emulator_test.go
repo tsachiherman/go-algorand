@@ -464,7 +464,7 @@ func TestEmulatedNonRelayToMultipleRelays(t *testing.T) {
 		},
 		initialAlloc: []initialTransactionsAllocation{
 			initialTransactionsAllocation{
-				node:              4,
+				node:              4, // i.e. node-2
 				transactionsCount: 1000,
 				transactionSize:   250,
 				expirationRound:   basics.Round(5),

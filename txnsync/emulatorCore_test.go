@@ -33,14 +33,16 @@ import (
 const roundDuration = 4 * time.Second
 
 type emulator struct {
-	scenario     scenario
-	nodes        []*emulatedNode
-	syncers      []*Service
-	nodeCount    int
-	log          logging.Logger
-	currentRound basics.Round
-	clock        *guidedClock
-	t            *testing.T
+	scenario                  scenario
+	nodes                     []*emulatedNode
+	syncers                   []*Service
+	nodeCount                 int
+	log                       logging.Logger
+	currentRound              basics.Round
+	clock                     *guidedClock
+	t                         *testing.T
+	totalDuplicateMessages    uint64
+	totalDuplicateMessageSize uint64
 }
 
 type nodeTransaction struct {
@@ -84,6 +86,9 @@ func emulateScenario(t *testing.T, scenario scenario) {
 		sort.Stable(results.nodes[n])
 	}
 	require.Equal(t, scenario.expectedResults, results)
+	t.Logf("Emulation Statistics:")
+	t.Logf("Total duplicate message count: %d", e.totalDuplicateMessages)
+	t.Logf("Total duplicate message size: %d", e.totalDuplicateMessageSize)
 }
 
 func (e *emulator) run() {
@@ -91,16 +96,16 @@ func (e *emulator) run() {
 	lastRoundStarted := guidedClock.Since()
 	e.clock = guidedClock
 	e.start()
+	e.waitBlocked()
 	// start the nodes
 	for e.clock.Since() < e.scenario.testDuration {
-		e.step()
 		if guidedClock.Since() > lastRoundStarted+roundDuration {
 			e.nextRound()
 			lastRoundStarted = guidedClock.Since()
 		}
-		e.waitBlocked()
+
 		guidedClock.Advance(e.scenario.step)
-		e.unblock()
+		e.unblockStep()
 	}
 	// stop the nodes
 	e.stop()
@@ -109,6 +114,13 @@ func (e *emulator) nextRound() {
 	e.currentRound++
 	for _, node := range e.nodes {
 		node.onNewRound(e.currentRound, true)
+	}
+}
+func (e *emulator) unblockStep() {
+	for _, node := range e.nodes {
+		node.unblock()
+		node.step()
+		node.waitBlocked()
 	}
 }
 func (e *emulator) step() {
@@ -129,11 +141,6 @@ func (e *emulator) stop() {
 func (e *emulator) waitBlocked() {
 	for _, node := range e.nodes {
 		node.waitBlocked()
-	}
-}
-func (e *emulator) unblock() {
-	for _, node := range e.nodes {
-		node.unblock()
 	}
 }
 func (e *emulator) initNodes() {
@@ -166,6 +173,7 @@ func (e *emulator) initNodes() {
 			node.txpoolIds[group.Transactions[0].ID()] = true
 			node.txpoolEntries = append(node.txpoolEntries, group)
 		}
+		node.txpoolGroupCounter += uint64(initAlloc.transactionsCount)
 		node.onNewTransactionPoolEntry()
 	}
 }
