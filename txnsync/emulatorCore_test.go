@@ -160,6 +160,7 @@ func (e *emulator) initNodes() {
 		syncer := MakeTranscationSyncService(makeNodeLogger(e.log, e.nodes[i]), e.nodes[i], e.scenario.netConfig.nodes[i].isRelay)
 		e.syncers = append(e.syncers, syncer)
 	}
+	randCounter := 0
 	for _, initAlloc := range e.scenario.initialAlloc {
 		node := e.nodes[initAlloc.node]
 		for i := 0; i < initAlloc.transactionsCount; i++ {
@@ -177,7 +178,11 @@ func (e *emulator) initNodes() {
 					},
 				},
 			}
-			crypto.RandBytes(group.Transactions[0].Txn.Note[:])
+			for i := 0; i < 1+(initAlloc.transactionSize)/32; i++ {
+				digest := crypto.Hash([]byte{byte(randCounter), byte(randCounter >> 8), byte(randCounter >> 16), byte(randCounter >> 24)})
+				copy(group.Transactions[0].Txn.Note[i*32:], digest[:])
+				randCounter++
+			}
 			node.txpoolIds[group.Transactions[0].ID()] = true
 			node.txpoolEntries = append(node.txpoolEntries, group)
 		}

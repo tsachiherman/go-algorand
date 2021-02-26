@@ -76,7 +76,7 @@ func (s *syncState) sendMessageLoop(currentTime time.Duration, deadline timers.D
 		msgCallback.messageData.encodedMessageSize = len(encodedMessage)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
 
-		scheduleOffset := peer.getNextScheduleOffset(s.isRelay, s.lastBeta, msgCallback.messageData.partialMessage)
+		scheduleOffset := peer.getNextScheduleOffset(s.isRelay, s.lastBeta, msgCallback.messageData.partialMessage, currentTime)
 		if scheduleOffset > time.Duration(0) {
 			s.scheduler.schedulerPeer(peer, currentTime+scheduleOffset)
 		}

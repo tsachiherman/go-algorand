@@ -38,7 +38,8 @@ const maxIncomingBloomFilterHistory = 20
 const recentTransactionsSentBufferLength = 10000
 const minDataExchangeRateThreshold = 100 * 1024            // 100KB/s, which is ~0.8Mbps
 const maxDataExchangeRateThreshold = 100 * 1024 * 1024 / 8 // 100Mbps
-const defaultDataExchangeRateThreshold = minDataExchangeRateThreshold
+const defaultDataExchangeRate = minDataExchangeRateThreshold
+const defaultRelayToRelayDataExchangeRate = 10 * 1024 * 1024 / 8 // 10Mbps
 
 const (
 	// peerStateStartup is before the timeout for the sending the first message to the peer has reached.
@@ -74,32 +75,49 @@ type Peer struct {
 	// state defines the peer state ( in terms of state machine state ). It's touched only by the sync main state machine
 	state peerState
 
+	// lastRound is the latest round reported by the peer.
 	lastRound basics.Round
 
+	// incomingMessages contains the incoming messages from this peer. This heap help us to reorder the imcoming messages so that
+	// we could process them in the tcp-transport order.
 	incomingMessages messageOrderingHeap
 
+	// nextReceivedMessageSeq is a counter containing the next message sequence number that we expect to see from this peer.
 	nextReceivedMessageSeq uint64 // the next message seq that we expect to recieve from that peer; implies that all previous messages have been accepted.
 
+	// recentIncomingBloomFilters contains the recent list of bloom filters sent from the peer. When considering sending transactions, we check this
+	// array to determine if the peer already has this message.
 	recentIncomingBloomFilters []incomingBloomFilter
-	recentSentTransactions     *transactionLru
+
+	// recentSentTransactions contains the recently sent transactions. It's needed since we don't want to rely on the other peer's bloom filter while
+	// sending back-to-back messages.
+	recentSentTransactions *transactionLru
 
 	// these two fields describe "what does that peer asked us to send it"
 	requestedTransactionsModulator byte
 	requestedTransactionsOffset    byte
 
+	// lastSentMessageSequenceNumber is the last sequence number of the message that we sent.
 	lastSentMessageSequenceNumber uint64
-	lastSentMessageRound          basics.Round
-	lastSentMessageTimestamp      time.Duration
-	lastSentMessageSize           int
-	lastSentBloomFilter           bloomFilter
+	// lastSentMessageRound is the round the last sent message was sent on. The timestamps are relative to the begining of the round
+	// and therefore need to be evaluated togather.
+	lastSentMessageRound basics.Round
+	// lastSentMessageTimestamp the timestamp at which the last message was sent.
+	lastSentMessageTimestamp time.Duration
+	// lastSentMessageSize is the encoded message size of the last sent message
+	lastSentMessageSize int
+	// lastSentBloomFilter is the last bloom filter that was sent to this peer. This bloom filter could be stale if no bloom filter was included in the last message.
+	lastSentBloomFilter bloomFilter
 
-	lastConfirmedMessageSeqReceived    uint64 // the last message that was confirmed by the peer to have been accepted.
+	// lastConfirmedMessageSeqReceived is the last message sequence number that was confirmed by the peer to have been accepted.
+	lastConfirmedMessageSeqReceived    uint64
 	lastReceivedMessageLocalRound      basics.Round
 	lastReceivedMessageTimestamp       time.Duration
 	lastReceivedMessageSize            int
 	lastReceivedMessageNextMsgMinDelay time.Duration
 
-	dataExchangeRate uint64 // the combined upload/download rate in bytes/second
+	// dataExchangeRate is the combined upload/download rate in bytes/second
+	dataExchangeRate uint64
 
 	// these two fields describe "what does the local peer want the remote peer to send back"
 	localTransactionsModulator  byte
@@ -108,15 +126,25 @@ type Peer struct {
 	// lastTransactionSelectionGroupCounter is the last transaction group counter that we've evaluated on the selectPendingTransactions method.
 	// it used to ensure that on subsequent calls, we won't need to scan the entire pending transactions array from the begining.
 	lastTransactionSelectionGroupCounter uint64
+
+	nextStateTimestamp time.Duration
 }
 
-func makePeer(networkPeer interface{}, isOutgoing bool) *Peer {
-	return &Peer{
+func makePeer(networkPeer interface{}, isOutgoing bool, isLocalNodeRelay bool) *Peer {
+	p := &Peer{
 		networkPeer:            networkPeer,
 		isOutgoing:             isOutgoing,
 		recentSentTransactions: makeTransactionLru(recentTransactionsSentBufferLength),
-		dataExchangeRate:       defaultDataExchangeRateThreshold,
+		dataExchangeRate:       defaultDataExchangeRate,
 	}
+	if isOutgoing {
+		// outgoing implies it's a relay, which means that it would want to receive all messages.
+		p.requestedTransactionsModulator = 1
+		if isLocalNodeRelay {
+			p.dataExchangeRate = defaultRelayToRelayDataExchangeRate
+		}
+	}
+	return p
 }
 
 // outgoing related methods :
@@ -303,7 +331,9 @@ func (p *Peer) updateIncomingMessageTiming(timings timingParams, currentRound ba
 	p.lastReceivedMessageNextMsgMinDelay = time.Duration(timings.NextMsgMinDelay) * time.Nanosecond
 }
 
-// peer state changes
+// advancePeerState is called when a peer schedule arrives, before we're doing any operation.
+// The method would determine whether a message need to be sent, and adjust the peer state
+// accordingly.
 func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops peersOps) {
 	if isRelay {
 		if p.isOutgoing {
@@ -359,14 +389,22 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 		}
 	} else {
 		switch p.state {
-		case peerStateHoldsoff:
-			p.state = peerStateInterrupt
-			ops |= peerOpsReschedule | peerOpsSetInterruptible
 		case peerStateStartup:
-			fallthrough
+			p.state = peerStateHoldsoff
+			ops |= peerOpsSendMessage
+
+		case peerStateHoldsoff:
+			if p.nextStateTimestamp == 0 {
+				p.state = peerStateInterrupt
+				ops |= peerOpsSetInterruptible | peerOpsReschedule
+			} else {
+				ops |= peerOpsSendMessage
+			}
+
 		case peerStateInterrupt:
 			p.state = peerStateHoldsoff
 			ops |= peerOpsSendMessage | peerOpsClearInterruptible
+
 		default: // peerStateLateBloom
 			// this isn't expected, so we can just ignore this.
 			// todo : log
@@ -375,7 +413,9 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 	return
 }
 
-func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMessage bool) time.Duration {
+// getNextScheduleOffset is called after a message was sent to the peer, and we need to evaluate the next
+// scheduling time.
+func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMessage bool, currentTime time.Duration) time.Duration {
 	if partialMessage {
 		if isRelay {
 			if p.isOutgoing {
@@ -387,8 +427,26 @@ func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMe
 				return messageTimeWindow
 			}
 		} else {
-			// update state.
-			p.state = peerStateStartup
+			if p.nextStateTimestamp > time.Duration(0) {
+				if currentTime+messageTimeWindow < p.nextStateTimestamp {
+					// we have enough time to send another message
+					return messageTimeWindow
+				}
+				// we don't have enough time.
+				next := p.nextStateTimestamp
+				p.nextStateTimestamp = 0
+				// move to the next state.
+				if p.state == peerStateInterrupt {
+					p.state = peerStateHoldsoff
+				} else {
+					p.state = peerStateInterrupt
+				}
+				return next - currentTime
+
+			}
+			// this is the first message
+			p.nextStateTimestamp = currentTime + beta
+
 			return messageTimeWindow
 		}
 	} else {
@@ -397,6 +455,11 @@ func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMe
 				return beta * 2
 			}
 		} else {
+			if p.nextStateTimestamp > time.Duration(0) {
+				next := p.nextStateTimestamp
+				p.nextStateTimestamp = 0
+				return next - currentTime
+			}
 			return beta
 		}
 	}
