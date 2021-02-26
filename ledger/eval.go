@@ -1238,7 +1238,12 @@ func loadAccounts(ctx context.Context, l ledgerForEvaluator, rnd basics.Round, g
 			done          chan error
 		}
 		type addrTask struct {
-			addr         basics.Address
+			// account to fetch
+			addr basics.Address
+
+			// Record all the Txn groups that need the data for this addr.
+			// (groups[i], groupIndices[i]) is a pair
+			// groups[i].balances[groupIndices[i]] = data for this addr
 			groups       []*groupTask
 			groupIndices []int
 		}
@@ -1342,6 +1347,7 @@ func loadAccounts(ctx context.Context, l ledgerForEvaluator, rnd basics.Round, g
 		}
 
 		for i, wg := range groupsReady {
+			// Wait to receive wg.balancesCount nil error messages, one for each address referenced in this txn group.
 			for j := 0; j < wg.balancesCount; j++ {
 				select {
 				case err := <-wg.done:
