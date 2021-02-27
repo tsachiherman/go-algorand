@@ -18,6 +18,7 @@ package txnsync
 
 import (
 	"fmt"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -169,9 +170,17 @@ func (n *emulatedNode) Random(x uint64) (out uint64) {
 }
 
 func (n *emulatedNode) GetPeers() (out []PeerInfo) {
-	for _, peer := range n.peers {
+	peerToIndex := make(map[*networkPeer]int)
+	for idx, peer := range n.peers {
 		out = append(out, PeerInfo{TxnSyncPeer: peer.peer, NetworkPeer: peer, IsOutgoing: peer.isOutgoing})
+		peerToIndex[peer] = idx
 	}
+	// sort the peers, which we need in order to make the test deterministic.
+	sort.Slice(out, func(i, j int) bool {
+		netPeer1 := out[i].NetworkPeer.(*networkPeer)
+		netPeer2 := out[j].NetworkPeer.(*networkPeer)
+		return peerToIndex[netPeer1] < peerToIndex[netPeer2]
+	})
 	return out
 }
 

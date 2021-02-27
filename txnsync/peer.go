@@ -127,7 +127,8 @@ type Peer struct {
 	// it used to ensure that on subsequent calls, we won't need to scan the entire pending transactions array from the begining.
 	lastTransactionSelectionGroupCounter uint64
 
-	nextStateTimestamp time.Duration
+	nextStateTimestamp               time.Duration
+	messageSeriesPendingTransactions []transactions.SignedTxGroup
 }
 
 func makePeer(networkPeer interface{}, isOutgoing bool, isLocalNodeRelay bool) *Peer {
@@ -154,6 +155,11 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 	if p.lastRound < round.SubSaturate(1) || p.requestedTransactionsModulator == 0 {
 		return nil, nil, false
 	}
+
+	if len(p.messageSeriesPendingTransactions) > 0 {
+		pendingTransactions = p.messageSeriesPendingTransactions
+	}
+
 	if len(pendingTransactions) == 0 {
 		return nil, nil, false
 	}
@@ -220,6 +226,12 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 			windowSizedReached = true
 		}
 	}
+
+	if !hasMorePendingTransactions {
+		// we're done with the current sequence.
+		p.messageSeriesPendingTransactions = nil
+	}
+
 	//fmt.Printf("selectPendingTransactions : selected %d transactions, %d not needed and aborted after exceeding data length %d/%d more = %v\n", len(selectedTxnIDs), removedTxn, accumulatedSize, windowLengthBytes, hasMorePendingTransactions)
 
 	return selectedTxns, selectedTxnIDs, hasMorePendingTransactions
@@ -415,53 +427,70 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 
 // getNextScheduleOffset is called after a message was sent to the peer, and we need to evaluate the next
 // scheduling time.
-func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMessage bool, currentTime time.Duration) time.Duration {
+func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMessage bool, currentTime time.Duration) (offset time.Duration, ops peersOps) {
 	if partialMessage {
 		if isRelay {
 			if p.isOutgoing {
 				if p.state == peerStateHoldsoff {
 					// we have enough time to send another message.
-					return messageTimeWindow
+					return messageTimeWindow, peerOpsReschedule
 				}
 			} else {
-				return messageTimeWindow
+				// a partial message was sent to an incoming peer
+				if p.nextStateTimestamp > time.Duration(0) {
+					if currentTime+messageTimeWindow < p.nextStateTimestamp {
+						// we have enough time to send another message
+						return messageTimeWindow, peerOpsReschedule
+					}
+					// we don't have enough time to send another message.
+					next := p.nextStateTimestamp
+					p.nextStateTimestamp = 0
+					return next - currentTime, peerOpsReschedule
+				}
+				p.nextStateTimestamp = currentTime + 2*beta
+				return messageTimeWindow, peerOpsReschedule
 			}
 		} else {
 			if p.nextStateTimestamp > time.Duration(0) {
 				if currentTime+messageTimeWindow < p.nextStateTimestamp {
 					// we have enough time to send another message
-					return messageTimeWindow
+					return messageTimeWindow, peerOpsReschedule
 				}
-				// we don't have enough time.
+				// we don't have enough time, so don't get into "interrupt" state,
+				// since we're already sending messages.
 				next := p.nextStateTimestamp
 				p.nextStateTimestamp = 0
+				p.messageSeriesPendingTransactions = nil
 				// move to the next state.
-				if p.state == peerStateInterrupt {
-					p.state = peerStateHoldsoff
-				} else {
-					p.state = peerStateInterrupt
-				}
-				return next - currentTime
+				p.state = peerStateHoldsoff
+				return next - currentTime, peerOpsReschedule | peerOpsClearInterruptible
 
 			}
 			// this is the first message
-			p.nextStateTimestamp = currentTime + beta
+			p.nextStateTimestamp = currentTime + 2*beta
 
-			return messageTimeWindow
+			return messageTimeWindow, peerOpsReschedule
 		}
 	} else {
 		if isRelay {
 			if !p.isOutgoing {
-				return beta * 2
+				// we sent a message to an incoming connection. No more data to send.
+				if p.nextStateTimestamp > time.Duration(0) {
+					next := p.nextStateTimestamp
+					p.nextStateTimestamp = 0
+					return next - currentTime, peerOpsReschedule
+				}
+
+				return beta * 2, peerOpsReschedule
 			}
 		} else {
 			if p.nextStateTimestamp > time.Duration(0) {
 				next := p.nextStateTimestamp
 				p.nextStateTimestamp = 0
-				return next - currentTime
+				return next - currentTime, peerOpsReschedule
 			}
-			return beta
+			return beta, peerOpsReschedule
 		}
 	}
-	return time.Duration(0)
+	return time.Duration(0), 0
 }

@@ -76,8 +76,20 @@ func (s *syncState) sendMessageLoop(currentTime time.Duration, deadline timers.D
 		msgCallback.messageData.encodedMessageSize = len(encodedMessage)
 		s.node.SendPeerMessage(peer.networkPeer, encodedMessage, msgCallback.asyncMessageSent)
 
-		scheduleOffset := peer.getNextScheduleOffset(s.isRelay, s.lastBeta, msgCallback.messageData.partialMessage, currentTime)
-		if scheduleOffset > time.Duration(0) {
+		scheduleOffset, ops := peer.getNextScheduleOffset(s.isRelay, s.lastBeta, msgCallback.messageData.partialMessage, currentTime)
+		if (ops & peerOpsSetInterruptible) == peerOpsSetInterruptible {
+			if _, has := s.interruptablePeersMap[peer]; !has {
+				s.interruptablePeers = append(s.interruptablePeers, peer)
+				s.interruptablePeersMap[peer] = len(s.interruptablePeers) - 1
+			}
+		}
+		if (ops & peerOpsClearInterruptible) == peerOpsClearInterruptible {
+			if idx, has := s.interruptablePeersMap[peer]; has {
+				delete(s.interruptablePeersMap, peer)
+				s.interruptablePeers[idx] = nil
+			}
+		}
+		if (ops & peerOpsReschedule) == peerOpsReschedule {
 			s.scheduler.schedulerPeer(peer, currentTime+scheduleOffset)
 		}
 

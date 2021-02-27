@@ -44,7 +44,8 @@ type syncState struct {
 	round                      basics.Round
 	fetchTransactions          bool
 	scheduler                  peerScheduler
-	interruptablePeers         map[*Peer]bool
+	interruptablePeers         []*Peer
+	interruptablePeersMap      map[*Peer]int // map a peer into the index of interruptablePeers
 	incomingMessagesCh         chan incomingMessage
 	outgoingMessagesCallbackCh chan *messageSentCallback
 	nextOffsetRollingCh        <-chan time.Time
@@ -55,9 +56,9 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	s.clock = s.node.Clock()
-	s.interruptablePeers = make(map[*Peer]bool)
 	s.incomingMessagesCh = make(chan incomingMessage, 1024)
 	s.outgoingMessagesCallbackCh = make(chan *messageSentCallback, 1024)
+	s.interruptablePeersMap = make(map[*Peer]int)
 	s.scheduler.node = s.node
 	s.lastBeta = beta(0)
 	roundSettings := s.node.GetCurrentRoundSettings()
@@ -138,13 +139,17 @@ func (s *syncState) onTransactionPoolChangedEvent(ent Event) {
 	s.lastBeta = newBeta
 
 	peers := make([]*Peer, 0, len(s.interruptablePeers))
-	for peer := range s.interruptablePeers {
+	for _, peer := range s.interruptablePeers {
+		if peer == nil {
+			continue
+		}
 		peers = append(peers, peer)
 		peer.state = peerStateHoldsoff
 
 	}
-	// reset the interruptablePeers table, since all it's members were made into holdsoff
-	s.interruptablePeers = make(map[*Peer]bool)
+	// reset the interruptablePeers array, since all it's members were made into holdsoff
+	s.interruptablePeers = nil
+	s.interruptablePeersMap = make(map[*Peer]int)
 
 	deadlineMonitor := s.clock.DeadlineMonitorAt(s.clock.Since() + sendMessagesTime)
 	s.sendMessageLoop(s.clock.Since(), deadlineMonitor, peers)
@@ -200,18 +205,24 @@ func (s *syncState) evaluatePeerStateChanges(currentTimeout time.Duration) {
 
 	sendMessagePeers := 0
 	for _, peer := range peers {
-		op := peer.advancePeerState(currentTimeout, s.isRelay)
-		if (op & peerOpsSendMessage) == peerOpsSendMessage {
+		ops := peer.advancePeerState(currentTimeout, s.isRelay)
+		if (ops & peerOpsSendMessage) == peerOpsSendMessage {
 			peers[sendMessagePeers] = peer
 			sendMessagePeers++
 		}
-		if (op & peerOpsSetInterruptible) == peerOpsSetInterruptible {
-			s.interruptablePeers[peer] = true
+		if (ops & peerOpsSetInterruptible) == peerOpsSetInterruptible {
+			if _, has := s.interruptablePeersMap[peer]; !has {
+				s.interruptablePeers = append(s.interruptablePeers, peer)
+				s.interruptablePeersMap[peer] = len(s.interruptablePeers) - 1
+			}
 		}
-		if (op & peerOpsClearInterruptible) == peerOpsClearInterruptible {
-			delete(s.interruptablePeers, peer)
+		if (ops & peerOpsClearInterruptible) == peerOpsClearInterruptible {
+			if idx, has := s.interruptablePeersMap[peer]; has {
+				delete(s.interruptablePeersMap, peer)
+				s.interruptablePeers[idx] = nil
+			}
 		}
-		if (op & peerOpsReschedule) == peerOpsReschedule {
+		if (ops & peerOpsReschedule) == peerOpsReschedule {
 			s.scheduler.schedulerPeer(peer, currentTimeout+s.lastBeta)
 		}
 	}
