@@ -43,6 +43,7 @@ type emulator struct {
 	t                         *testing.T
 	totalDuplicateMessages    uint64
 	totalDuplicateMessageSize uint64
+	lastRandom                uint64
 }
 
 type nodeTransaction struct {
@@ -129,11 +130,6 @@ func (e *emulator) unblockStep() {
 		node.unblock()
 		node.step()
 		node.waitBlocked()
-	}
-}
-func (e *emulator) step() {
-	for _, node := range e.nodes {
-		node.step()
 	}
 }
 func (e *emulator) start() {

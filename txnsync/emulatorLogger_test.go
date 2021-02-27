@@ -67,7 +67,7 @@ func (e emulatorNodeLogger) Infof(s string, args ...interface{}) {
 		// special output.
 		e.printMsg(s, args...)
 	} else {
-		e.Logger.Infof(s, args...)
+		e.Logger.Infof(e.node.name+" :"+s, args...)
 	}
 }
 

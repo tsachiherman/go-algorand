@@ -155,6 +155,7 @@ func (n *emulatedNode) Random(x uint64) (out uint64) {
 	limit := x
 	x += uint64(n.nodeIndex) * 997
 	x += uint64(n.emulator.currentRound) * 797
+	x += uint64(n.emulator.lastRandom) * 797
 	bytes := make([]byte, 8)
 	for i := 0; i < 8; i++ {
 		bytes[i] = byte(x >> (i * 8))
@@ -166,21 +167,29 @@ func (n *emulatedNode) Random(x uint64) (out uint64) {
 		out += uint64(digest[i])
 	}
 	out = out % limit
+	n.emulator.lastRandom ^= out
 	return out
 }
 
-func (n *emulatedNode) GetPeers() (out []PeerInfo) {
+func (n *emulatedNode) orderedPeers() (out []*networkPeer) {
 	peerToIndex := make(map[*networkPeer]int)
 	for idx, peer := range n.peers {
-		out = append(out, PeerInfo{TxnSyncPeer: peer.peer, NetworkPeer: peer, IsOutgoing: peer.isOutgoing})
+		out = append(out, peer)
 		peerToIndex[peer] = idx
 	}
 	// sort the peers, which we need in order to make the test deterministic.
 	sort.Slice(out, func(i, j int) bool {
-		netPeer1 := out[i].NetworkPeer.(*networkPeer)
-		netPeer2 := out[j].NetworkPeer.(*networkPeer)
+		netPeer1 := out[i]
+		netPeer2 := out[j]
 		return peerToIndex[netPeer1] < peerToIndex[netPeer2]
 	})
+	return
+}
+
+func (n *emulatedNode) GetPeers() (out []PeerInfo) {
+	for _, peer := range n.orderedPeers() {
+		out = append(out, PeerInfo{TxnSyncPeer: peer.peer, NetworkPeer: peer, IsOutgoing: peer.isOutgoing})
+	}
 	return out
 }
 
@@ -250,7 +259,8 @@ func (n *emulatedNode) step() {
 	msgHandler := n.emulator.syncers[n.nodeIndex].GetIncomingMessageHandler()
 	now := n.emulator.clock.Since()
 	// check if we have any pending network messages and forward them.
-	for _, peer := range n.peers {
+
+	for _, peer := range n.orderedPeers() {
 		peer.mu.Lock()
 		for len(peer.messageQ) > 0 {
 			if peer.messageQ[0].readyAt > now {
