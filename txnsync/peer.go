@@ -150,7 +150,7 @@ func makePeer(networkPeer interface{}, isOutgoing bool, isLocalNodeRelay bool) *
 
 // outgoing related methods :
 
-func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid, partialTranscationsSet bool) {
+func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.SignedTxGroup, sendWindow time.Duration, round basics.Round, bloomFilterSize int) (selectedTxns []transactions.SignedTxGroup, selectedTxnIDs []transactions.Txid, partialTranscationsSet bool) {
 	// if peer is too far back, don't send it any transactions ( or if the peer is not interested in transactions )
 	if p.lastRound < round.SubSaturate(1) || p.requestedTransactionsModulator == 0 {
 		return nil, nil, false
@@ -165,6 +165,7 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 	}
 
 	windowLengthBytes := int(uint64(sendWindow) * p.dataExchangeRate / uint64(time.Second))
+	windowLengthBytes -= bloomFilterSize
 
 	accumulatedSize := 0
 	selectedTxnIDs = make([]transactions.Txid, 0, len(pendingTransactions))
@@ -295,6 +296,16 @@ func (p *Peer) addIncomingBloomFilter(round basics.Round, incomingFilter bloomFi
 		// delete some of the old entries.
 		p.recentIncomingBloomFilters = p.recentIncomingBloomFilters[firstValidEntry:]
 	}
+	// scan the existing bloom filter, and ensure we have only one bloom filter for every
+	// set of encoding paramters. this would allow us to accumulate false positive
+	for idx, bloomFltr := range p.recentIncomingBloomFilters {
+		if bloomFltr.filter.encodingParams == incomingFilter.encodingParams {
+			// replace.
+			p.recentIncomingBloomFilters[idx] = bf
+			return
+		}
+	}
+
 	p.recentIncomingBloomFilters = append(p.recentIncomingBloomFilters, bf)
 	if len(p.recentIncomingBloomFilters) > maxIncomingBloomFilterHistory {
 		p.recentIncomingBloomFilters = p.recentIncomingBloomFilters[1:]

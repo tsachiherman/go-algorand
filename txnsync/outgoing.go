@@ -111,6 +111,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 
 	createBloomFilter := false
 	sendTransactions := false
+	bloomFilterSize := 0
 
 	// on outgoing peers of relays, we want have some custom logic.
 	if s.isRelay {
@@ -153,6 +154,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		metaMessage.filter = makeBloomFilter(metaMessage.message.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
 		if !metaMessage.filter.compare(peer.lastSentBloomFilter) {
 			metaMessage.message.TxnBloomFilter = metaMessage.filter.encode()
+			bloomFilterSize = metaMessage.message.TxnBloomFilter.Msgsize()
 		}
 	}
 
@@ -163,8 +165,16 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 			pendingTransactions = locallyGeneratedTransactions(pendingTransactions)
 		}
 		var txnGroups []transactions.SignedTxGroup
-		txnGroups, metaMessage.sentTranscationsIDs, metaMessage.partialMessage = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round)
+		txnGroups, metaMessage.sentTranscationsIDs, metaMessage.partialMessage = peer.selectPendingTransactions(pendingTransactions, messageTimeWindow, s.round, bloomFilterSize)
 		metaMessage.message.TransactionGroups.Bytes = encodeTransactionGroups(txnGroups)
+
+		// clear the last sent bloom filter on the end of a series of partial messages.
+		// this would ensure we generate a new bloom filter every beta, which is needed
+		// in order to avoid the bloom filter inherent false positive rate.
+		if !metaMessage.partialMessage && createBloomFilter {
+			peer.lastSentBloomFilter = bloomFilter{}
+		}
+
 	}
 	/*if len(txnGroups) > 0 {
 		fmt.Printf("sent transactions groups %d (%d bytes)\n", len(txnGroups), len(txMsg.TransactionGroups.Bytes))
