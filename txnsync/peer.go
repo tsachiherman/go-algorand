@@ -364,6 +364,8 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 			// we need to figure the special state needed for "late bloom filter message"
 			switch p.state {
 			case peerStateStartup:
+				p.nextStateTimestamp = currenTime + p.lastReceivedMessageNextMsgMinDelay
+
 				messagesCount := p.lastReceivedMessageNextMsgMinDelay / messageTimeWindow
 				if messagesCount <= 1 {
 					// we have time to send only a single message. This message need to include both transactions and bloom filter.
@@ -378,7 +380,7 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 				ops |= peerOpsSendMessage
 			case peerStateHoldsoff:
 				// calculate how more messages we can send ( if needed )
-				messagesCount := (p.lastReceivedMessageTimestamp + p.lastReceivedMessageNextMsgMinDelay - currenTime) / messageTimeWindow
+				messagesCount := (p.nextStateTimestamp - currenTime) / messageTimeWindow
 				if messagesCount <= 1 {
 					// we have time to send only a single message. This message need to include both transactions and bloom filter.
 					p.state = peerStateLateBloom
@@ -484,14 +486,24 @@ func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMe
 		}
 	} else {
 		if isRelay {
-			if !p.isOutgoing {
+			if p.isOutgoing {
+				if p.state == peerStateHoldsoff {
+					// even that we're done now, we need to send another message that would contain the bloom filter
+					p.state = peerStateLateBloom
+					next := p.nextStateTimestamp - messageTimeWindow - currentTime
+					p.nextStateTimestamp = 0
+					fmt.Printf("scheduling remainder\n")
+					return next, peerOpsReschedule
+				}
+				p.nextStateTimestamp = 0
+			} else {
 				// we sent a message to an incoming connection. No more data to send.
 				if p.nextStateTimestamp > time.Duration(0) {
 					next := p.nextStateTimestamp
 					p.nextStateTimestamp = 0
 					return next - currentTime, peerOpsReschedule
 				}
-
+				p.nextStateTimestamp = 0
 				return beta * 2, peerOpsReschedule
 			}
 		} else {

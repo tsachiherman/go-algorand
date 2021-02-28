@@ -23,7 +23,7 @@ import (
 )
 
 var _ = fmt.Printf
-var incomingTxSyncMsgFormat = "Incoming Txsync #%d round %d transacations %d request [%d/%d] bloom %d"
+var incomingTxSyncMsgFormat = "Incoming Txsync #%d round %d transacations %d request [%d/%d] bloom %d nextTS %d"
 
 var errUnsupportedTransactionSyncMessageVersion = errors.New("unsupported transaction sync message version")
 
@@ -166,12 +166,12 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 		// add the received transaction groups to the peer's recentSentTransactions so that we won't be sending these back to the peer.
 		peer.updateIncomingTransactionGroups(txnGroups)
 
-		s.log.Infof(incomingTxSyncMsgFormat, seq, txMsg.Round, len(txnGroups), txMsg.UpdatedRequestParams.Offset, txMsg.UpdatedRequestParams.Modulator, len(txMsg.TxnBloomFilter.BloomFilter))
+		s.log.Infof(incomingTxSyncMsgFormat, seq, txMsg.Round, len(txnGroups), txMsg.UpdatedRequestParams.Offset, txMsg.UpdatedRequestParams.Modulator, len(txMsg.TxnBloomFilter.BloomFilter), txMsg.MsgSync.NextMsgMinDelay)
 		messageProcessed = true
 	}
 	// if we're a relay, this is an outgoing peer and we've processed a valid message,
 	// then we want to respond right away as well as schedule bloom message.
-	if messageProcessed && peer.isOutgoing && s.isRelay {
+	if messageProcessed && peer.isOutgoing && s.isRelay && peer.lastReceivedMessageNextMsgMinDelay != time.Duration(0) {
 		peer.state = peerStateStartup
 		// if we had another message coming from this peer previously, we need to ensure there are not scheduled tasks.
 		s.scheduler.peerDuration(peer)
