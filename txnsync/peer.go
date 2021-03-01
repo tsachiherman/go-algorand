@@ -34,6 +34,9 @@ type peerState int
 //msgp:ignore peersOps
 type peersOps int
 
+//msgp:ignore messageConstructionOps
+type messageConstructionOps int
+
 const maxIncomingBloomFilterHistory = 20
 const recentTransactionsSentBufferLength = 10000
 const minDataExchangeRateThreshold = 100 * 1024            // 100KB/s, which is ~0.8Mbps
@@ -56,6 +59,11 @@ const (
 	peerOpsSetInterruptible   peersOps = 2
 	peerOpsClearInterruptible peersOps = 4
 	peerOpsReschedule         peersOps = 8
+
+	messageConstBloomFilter         messageConstructionOps = 1
+	messageConstTransactions        messageConstructionOps = 2
+	messageConstNextMinDelay        messageConstructionOps = 4
+	messageConstUpdateRequestParams messageConstructionOps = 8
 )
 
 // incomingBloomFilter stores an incoming bloom filter, along with the associated round number.
@@ -127,7 +135,12 @@ type Peer struct {
 	// it used to ensure that on subsequent calls, we won't need to scan the entire pending transactions array from the begining.
 	lastTransactionSelectionGroupCounter uint64
 
-	nextStateTimestamp               time.Duration
+	// nextStateTimestamp indicates the next timestamp where the peer state would need to be changed.
+	// it used to allow sending partial message while retaining the "next-beta time", or, in the case of outgoing relays,
+	// its being used to hold when we need to send the last (bloom) message.
+	nextStateTimestamp time.Duration
+	// messageSeriesPendingTransactions contain the transactions we are sending in the current "message-series". It allows us to pick a given
+	// "snapshot" from the transaction pool, and send that "snapshot" to completion before attempting to re-iterate.
 	messageSeriesPendingTransactions []transactions.SignedTxGroup
 }
 
@@ -433,6 +446,38 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 		default: // peerStateLateBloom
 			// this isn't expected, so we can just ignore this.
 			// todo : log
+		}
+	}
+	return
+}
+
+func (p *Peer) getMessageConstructionOps(isRelay bool, fetchTransactions bool) (ops messageConstructionOps) {
+	// on outgoing peers of relays, we want have some custom logic.
+	if isRelay {
+		if p.isOutgoing {
+			switch p.state {
+			case peerStateStartup:
+				// we need to send just the bloom filter.
+				ops |= messageConstBloomFilter
+			case peerStateLateBloom:
+				ops |= messageConstBloomFilter | messageConstTransactions
+			case peerStateHoldsoff:
+				ops |= messageConstTransactions
+			}
+		} else {
+			ops |= messageConstTransactions
+			if p.nextStateTimestamp == 0 {
+				ops |= messageConstBloomFilter
+			}
+			if p.nextStateTimestamp == 0 {
+				ops |= messageConstNextMinDelay
+			}
+		}
+		ops |= messageConstUpdateRequestParams
+	} else {
+		ops |= messageConstTransactions
+		if fetchTransactions {
+			ops |= messageConstBloomFilter | messageConstUpdateRequestParams
 		}
 	}
 	return

@@ -109,41 +109,11 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		},
 	}
 
-	createBloomFilter := false
-	sendTransactions := false
 	bloomFilterSize := 0
 
-	// on outgoing peers of relays, we want have some custom logic.
-	if s.isRelay {
-		if peer.isOutgoing {
-			switch peer.state {
-			case peerStateStartup:
-				// we need to send just the bloom filter.
-				createBloomFilter = true
-				//fmt.Printf("assembling message on outgoing relay : sending bloom, no tx\n")
-			case peerStateLateBloom:
-				sendTransactions = true
-				createBloomFilter = true
-				//fmt.Printf("assembling message on outgoing relay : sending tx & bloom\n")
-			case peerStateHoldsoff:
-				sendTransactions = true
-				//fmt.Printf("assembling message on outgoing relay : sending tx, no bloom\n")
-			default:
-				// todo - log
-			}
-		} else {
-			sendTransactions = true
-			// todo - enable this:
-			if peer.nextStateTimestamp == 0 {
-				createBloomFilter = true
-			}
-		}
-	} else {
-		createBloomFilter = s.fetchTransactions
-		sendTransactions = true
-	}
+	msgOps := peer.getMessageConstructionOps(s.isRelay, s.fetchTransactions)
 
-	if s.fetchTransactions {
+	if msgOps&messageConstUpdateRequestParams == messageConstUpdateRequestParams {
 		// update the UpdatedRequestParams
 		offset, modulator := peer.getLocalRequestParams()
 		metaMessage.message.UpdatedRequestParams.Modulator = modulator
@@ -153,7 +123,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		}
 	}
 
-	if createBloomFilter && len(pendingTransactions) > 0 {
+	if (msgOps&messageConstBloomFilter == messageConstBloomFilter) && len(pendingTransactions) > 0 {
 		// generate a bloom filter that matches the requests params.
 		metaMessage.filter = makeBloomFilter(metaMessage.message.UpdatedRequestParams, pendingTransactions, uint32(s.node.Random(0xffffffff)))
 		if !metaMessage.filter.compare(peer.lastSentBloomFilter) {
@@ -162,7 +132,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		}
 	}
 
-	if sendTransactions {
+	if msgOps&messageConstTransactions == messageConstTransactions {
 		if !s.isRelay {
 			// on non-relay, we need to filter out the non-locally originated messages since we don't want
 			// non-relays to send transcation that they received via the transaction sync back.
@@ -175,7 +145,7 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		// clear the last sent bloom filter on the end of a series of partial messages.
 		// this would ensure we generate a new bloom filter every beta, which is needed
 		// in order to avoid the bloom filter inherent false positive rate.
-		if !metaMessage.partialMessage /*&& createBloomFilter */ {
+		if !metaMessage.partialMessage {
 			peer.lastSentBloomFilter = bloomFilter{}
 		}
 	}
@@ -185,18 +155,10 @@ func (s *syncState) assemblePeerMessage(peer *Peer, pendingTransactions []transa
 		metaMessage.message.MsgSync.ResponseElapsedTime = uint64((currentTime - peer.lastReceivedMessageTimestamp).Nanoseconds())
 	}
 
-	if s.isRelay {
-		if peer.isOutgoing {
-			metaMessage.message.MsgSync.NextMsgMinDelay = 0
-		} else {
-			// we want to send the next message timing in the following cases:
-			if peer.nextStateTimestamp == 0 {
-				metaMessage.message.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) * 2
-			}
-		}
-	} else {
-		metaMessage.message.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds())
+	if msgOps&messageConstNextMinDelay == messageConstNextMinDelay {
+		metaMessage.message.MsgSync.NextMsgMinDelay = uint64(s.lastBeta.Nanoseconds()) * 2
 	}
+
 	return metaMessage
 }
 
