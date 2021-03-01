@@ -205,7 +205,7 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 		grpIdx := (scanIdx + startIndex) % len(pendingTransactions)
 
 		// filter out transactions that we already previously sent.
-		txID := pendingTransactions[grpIdx].Transactions[0].ID()
+		txID := pendingTransactions[grpIdx].FirstTransactionID
 		if p.recentSentTransactions.contained(txID) {
 			// we already sent that transaction. no need to send again.
 			continue
@@ -344,8 +344,7 @@ func (p *Peer) updateRequestParams(modulator, offset byte) {
 func (p *Peer) updateIncomingTransactionGroups(txnGroups []transactions.SignedTxGroup) {
 	for _, txnGroup := range txnGroups {
 		if len(txnGroup.Transactions) > 0 {
-			txID := txnGroup.Transactions[0].ID()
-			p.recentSentTransactions.add(txID)
+			p.recentSentTransactions.add(txnGroup.FirstTransactionID)
 		}
 	}
 }

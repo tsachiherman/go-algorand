@@ -99,7 +99,7 @@ func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.Sign
 		// we want all.
 		filtedTransactionsIDs = make([]transactions.Txid, 0, len(txnGroups))
 		for _, group := range txnGroups {
-			filtedTransactionsIDs = append(filtedTransactionsIDs, group.Transactions[0].ID())
+			filtedTransactionsIDs = append(filtedTransactionsIDs, group.FirstTransactionID)
 		}
 		if len(txnGroups) > 0 {
 			result.containedTxnsRange.firstCounter = txnGroups[0].GroupCounter
@@ -110,7 +110,7 @@ func makeBloomFilter(encodingParams requestParams, txnGroups []transactions.Sign
 		result.containedTxnsRange.firstCounter = math.MaxUint64
 		filtedTransactionsIDs = make([]transactions.Txid, 0, len(txnGroups))
 		for _, group := range txnGroups {
-			txID := group.Transactions[0].ID()
+			txID := group.FirstTransactionID
 			if txidToUint64(txID)%uint64(encodingParams.Modulator) != uint64(encodingParams.Offset) {
 				continue
 			}

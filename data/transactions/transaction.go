@@ -602,4 +602,7 @@ type SignedTxGroup struct {
 	// The transaction sync is using it as a way to scan the transactions group list more efficiently, as it
 	// can continue scanning the list from the place where it last stopped.
 	GroupCounter uint64
+	// FirstTransactionID is the transaction ID of the first transaction in this transaction group.
+	// TODO - make this more secure by making this the hash of the first signed transaction.
+	FirstTransactionID Txid
 }

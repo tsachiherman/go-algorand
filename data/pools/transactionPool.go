@@ -228,6 +228,7 @@ func (pool *TransactionPool) rememberCommit(flush bool) {
 		for i, txGroup := range pool.rememberedTxGroups {
 			pool.pendingCounter++
 			txGroup.GroupCounter = pool.pendingCounter
+			txGroup.FirstTransactionID = txGroup.Transactions[0].ID()
 			pool.rememberedTxGroups[i] = txGroup
 		}
 		pool.pendingTxGroups = append(pool.pendingTxGroups, pool.rememberedTxGroups...)

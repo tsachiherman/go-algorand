@@ -245,6 +245,7 @@ func (n *emulatedNode) IncomingTransactionGroups(peer interface{}, groups []tran
 		n.txpoolIds[txID] = true
 		group.GroupCounter = n.txpoolGroupCounter
 		n.txpoolGroupCounter++
+		group.FirstTransactionID = txID
 		n.txpoolEntries = append(n.txpoolEntries, group)
 	}
 	if duplicateMessage > 0 {

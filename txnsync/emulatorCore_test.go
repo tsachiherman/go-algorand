@@ -179,7 +179,8 @@ func (e *emulator) initNodes() {
 				copy(group.Transactions[0].Txn.Note[i*32:], digest[:])
 				randCounter++
 			}
-			node.txpoolIds[group.Transactions[0].ID()] = true
+			group.FirstTransactionID = group.Transactions[0].ID()
+			node.txpoolIds[group.FirstTransactionID] = true
 			node.txpoolEntries = append(node.txpoolEntries, group)
 		}
 		node.txpoolGroupCounter += uint64(initAlloc.transactionsCount)
