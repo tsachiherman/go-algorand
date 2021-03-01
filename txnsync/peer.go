@@ -380,7 +380,7 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 				p.nextStateTimestamp = currenTime + p.lastReceivedMessageNextMsgMinDelay
 
 				messagesCount := p.lastReceivedMessageNextMsgMinDelay / messageTimeWindow
-				if messagesCount <= 1 {
+				if messagesCount <= 2 {
 					// we have time to send only a single message. This message need to include both transactions and bloom filter.
 					p.state = peerStateLateBloom
 				} else {
@@ -394,7 +394,7 @@ func (p *Peer) advancePeerState(currenTime time.Duration, isRelay bool) (ops pee
 			case peerStateHoldsoff:
 				// calculate how more messages we can send ( if needed )
 				messagesCount := (p.nextStateTimestamp - currenTime) / messageTimeWindow
-				if messagesCount <= 1 {
+				if messagesCount <= 2 {
 					// we have time to send only a single message. This message need to include both transactions and bloom filter.
 					p.state = peerStateLateBloom
 				}
@@ -456,11 +456,8 @@ func (p *Peer) getMessageConstructionOps(isRelay bool, fetchTransactions bool) (
 	if isRelay {
 		if p.isOutgoing {
 			switch p.state {
-			case peerStateStartup:
-				// we need to send just the bloom filter.
-				ops |= messageConstBloomFilter
 			case peerStateLateBloom:
-				ops |= messageConstBloomFilter | messageConstTransactions
+				ops |= messageConstBloomFilter
 			case peerStateHoldsoff:
 				ops |= messageConstTransactions
 			}
@@ -535,9 +532,8 @@ func (p *Peer) getNextScheduleOffset(isRelay bool, beta time.Duration, partialMe
 				if p.state == peerStateHoldsoff {
 					// even that we're done now, we need to send another message that would contain the bloom filter
 					p.state = peerStateLateBloom
-					next := p.nextStateTimestamp - messageTimeWindow - currentTime
+					next := p.nextStateTimestamp - 2*messageTimeWindow - currentTime
 					p.nextStateTimestamp = 0
-					fmt.Printf("scheduling remainder\n")
 					return next, peerOpsReschedule
 				}
 				p.nextStateTimestamp = 0
