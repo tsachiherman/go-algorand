@@ -100,6 +100,9 @@ type Peer struct {
 	// recentSentTransactions contains the recently sent transactions. It's needed since we don't want to rely on the other peer's bloom filter while
 	// sending back-to-back messages.
 	recentSentTransactions *transactionLru
+	// recentSentTransactionsRound is the round associated with the cache of recently sent transactions. We keep this variable around so that we can
+	// flush the cache on every round so that we can give pending transaction another chance of being transmitted.
+	recentSentTransactionsRound basics.Round
 
 	// these two fields describe "what does that peer asked us to send it"
 	requestedTransactionsModulator byte
@@ -175,6 +178,13 @@ func (p *Peer) selectPendingTransactions(pendingTransactions []transactions.Sign
 
 	if len(pendingTransactions) == 0 {
 		return nil, nil, false
+	}
+
+	// flush the recent sent transaction cache on the begining of a new round to give pending transactions another
+	// chance of being transmitted.
+	if p.recentSentTransactionsRound != round {
+		p.recentSentTransactions.reset()
+		p.recentSentTransactionsRound = round
 	}
 
 	windowLengthBytes := int(uint64(sendWindow) * p.dataExchangeRate / uint64(time.Second))
@@ -330,7 +340,7 @@ func (p *Peer) updateRequestParams(modulator, offset byte) {
 }
 
 // update the recentSentTransactions with the incoming transaction groups. This would prevent us from sending the received transactions back to the
-// peer that sent it to us.
+// peer that sent it to us. This comes in addition to the bloom filter, if being sent by the other peer.
 func (p *Peer) updateIncomingTransactionGroups(txnGroups []transactions.SignedTxGroup) {
 	for _, txnGroup := range txnGroups {
 		if len(txnGroup.Transactions) > 0 {

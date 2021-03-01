@@ -151,16 +151,7 @@ func (s *syncState) evaluateIncomingMessage(message incomingMessage) {
 			fmt.Printf("received transactions groups failed %v\n", err)
 			continue
 		}
-		/*if peer.lastSentBloomFilter.filter != nil {
-			// test
-			dup := 0
-			for _, group := range txnGroups {
-				if peer.lastSentBloomFilter.test(group.Transactions[0].ID()) {
-					dup++
-				}
-			}
-			fmt.Printf("dup received %d\n", dup)
-		}*/
+
 		transacationPoolSize = s.node.IncomingTransactionGroups(peer.networkPeer, txnGroups)
 
 		// add the received transaction groups to the peer's recentSentTransactions so that we won't be sending these back to the peer.

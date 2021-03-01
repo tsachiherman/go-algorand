@@ -57,3 +57,8 @@ func (lru *transactionLru) add(txid transactions.Txid) {
 func (lru *transactionLru) contained(txid transactions.Txid) bool {
 	return lru.transactionsMap[txid]
 }
+
+func (lru *transactionLru) reset() {
+	lru.transactionsMap = make(map[transactions.Txid]bool, lru.size)
+	lru.oldest = 0
+}
