@@ -17,6 +17,7 @@
 package txnsync
 
 import (
+	"sort"
 	"time"
 
 	"github.com/algorand/go-deadlock"
@@ -86,20 +87,28 @@ func (g *guidedClock) DeadlineMonitorAt(at time.Duration) timers.DeadlineMonitor
 func (g *guidedClock) Advance(adv time.Duration) {
 	g.adv += adv
 
-	expiredClocks := make(map[time.Duration]chan time.Time)
+	type entryStruct struct {
+		duration time.Duration
+		ch       chan time.Time
+	}
+	expiredClocks := []entryStruct{}
 	// find all the expired clocks.
 	for delta, ch := range g.timers {
 		if delta < g.adv {
-			expiredClocks[delta] = ch
+			expiredClocks = append(expiredClocks, entryStruct{delta, ch})
 		}
 	}
+	sort.SliceStable(expiredClocks, func(i, j int) bool {
+		return expiredClocks[i].duration < expiredClocks[j].duration
+	})
+
 	// remove from map
-	for delta := range expiredClocks {
-		delete(g.timers, delta)
+	for _, entry := range expiredClocks {
+		delete(g.timers, entry.duration)
 	}
 	// fire expired clocks
-	for _, ch := range expiredClocks {
-		ch <- g.zero.Add(g.adv)
+	for _, entry := range expiredClocks {
+		entry.ch <- g.zero.Add(g.adv)
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()

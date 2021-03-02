@@ -112,7 +112,6 @@ func (e *emulator) run() {
 			e.nextRound()
 			lastRoundStarted = guidedClock.Since()
 		}
-
 		guidedClock.Advance(e.scenario.step)
 		e.unblockStep()
 	}
@@ -138,7 +137,8 @@ func (e *emulator) start() {
 	}
 }
 func (e *emulator) stop() {
-	for _, node := range e.syncers {
+	for i, node := range e.syncers {
+		e.nodes[i].disableBlocking()
 		node.Stop()
 	}
 }

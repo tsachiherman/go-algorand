@@ -86,7 +86,7 @@ type NodeConnector interface {
 	// IncomingTransactionGroups is called by the transaction sync when transactions have been received and need
 	// to be stored in the transaction pool
 	IncomingTransactionGroups(interface{}, []transactions.SignedTxGroup) (transactionPoolSize int)
-	NotifyState(SyncMachineState)
+	NotifyState(SyncMachineState) chan struct{}
 }
 
 // MakeTranscationPoolChangeEvent creates an event for when a txn pool size has changed.

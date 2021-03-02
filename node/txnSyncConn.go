@@ -37,14 +37,16 @@ type transcationSyncNodeConnector struct {
 	clock          timers.WallClock
 	messageHandler txnsync.IncomingMessageHandler
 	txHandler      data.SolicitedTxHandler
+	openStateCh    chan struct{}
 }
 
 func makeTranscationSyncNodeConnector(node *AlgorandFullNode) transcationSyncNodeConnector {
 	return transcationSyncNodeConnector{
-		node:      node,
-		eventsCh:  make(chan txnsync.Event, 1),
-		clock:     timers.MakeMonotonicClock(time.Now()),
-		txHandler: node.txHandler.SolicitedTxHandler(),
+		node:        node,
+		eventsCh:    make(chan txnsync.Event, 1),
+		clock:       timers.MakeMonotonicClock(time.Now()),
+		txHandler:   node.txHandler.SolicitedTxHandler(),
+		openStateCh: make(chan struct{}),
 	}
 }
 
@@ -61,7 +63,8 @@ func (tsnc *transcationSyncNodeConnector) GetCurrentRoundSettings() txnsync.Roun
 }
 
 // NotifyState is used for testing purposes only, and can remain empty on production code.
-func (tsnc *transcationSyncNodeConnector) NotifyState(updatedState txnsync.SyncMachineState) {
+func (tsnc *transcationSyncNodeConnector) NotifyState(updatedState txnsync.SyncMachineState) chan struct{} {
+	return tsnc.openStateCh
 }
 
 func (tsnc *transcationSyncNodeConnector) Random(rng uint64) uint64 {

@@ -55,6 +55,9 @@ type syncState struct {
 func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	// The following would allow the emulator to start the service in a "stopped" mode.
+	s.node.NotifyState(StateMachineBlocked)
+
 	s.clock = s.node.Clock()
 	s.incomingMessagesCh = make(chan incomingMessage, 1024)
 	s.outgoingMessagesCallbackCh = make(chan *messageSentCallback, 1024)
@@ -99,10 +102,8 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 		default:
 		}
 
-		s.node.NotifyState(StateMachineBlocked)
 		select {
 		case ent := <-externalEvents:
-			s.node.NotifyState(StateMachineRunning)
 			switch ent.eventType {
 			case transactionPoolChangedEvent:
 				s.onTransactionPoolChangedEvent(ent)
@@ -110,20 +111,16 @@ func (s *syncState) mainloop(serviceCtx context.Context, wg *sync.WaitGroup) {
 				s.onNewRoundEvent(ent)
 			}
 		case <-nextPeerStateCh:
-			s.node.NotifyState(StateMachineRunning)
 			s.evaluatePeerStateChanges(nextPeerStateTime)
 		case incomingMsg := <-s.incomingMessagesCh:
-			s.node.NotifyState(StateMachineRunning)
 			s.evaluateIncomingMessage(incomingMsg)
 		case msgSent := <-s.outgoingMessagesCallbackCh:
-			s.node.NotifyState(StateMachineRunning)
 			s.evaluateOutgoingMessage(msgSent)
 		case <-s.nextOffsetRollingCh:
-			s.node.NotifyState(StateMachineRunning)
 			s.rollOffsets()
 		case <-serviceCtx.Done():
-			s.node.NotifyState(StateMachineRunning)
 			return
+		case <-s.node.NotifyState(StateMachineBlocked):
 		}
 	}
 }

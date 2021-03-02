@@ -60,17 +60,19 @@ type emulatedNode struct {
 	blocked            chan struct{}
 	mu                 deadlock.Mutex
 	txpoolGroupCounter uint64
+	blockingEnabled    bool
 }
 
 func makeEmulatedNode(emulator *emulator, nodeIdx int) *emulatedNode {
 	en := &emulatedNode{
-		emulator:       emulator,
-		peers:          make(map[int]*networkPeer),
-		externalEvents: make(chan Event, 10000),
-		nodeIndex:      nodeIdx,
-		txpoolIds:      make(map[transactions.Txid]bool),
-		name:           emulator.scenario.netConfig.nodes[nodeIdx].name,
-		state:          StateMachineRunning,
+		emulator:        emulator,
+		peers:           make(map[int]*networkPeer),
+		externalEvents:  make(chan Event, 10000),
+		nodeIndex:       nodeIdx,
+		txpoolIds:       make(map[transactions.Txid]bool),
+		name:            emulator.scenario.netConfig.nodes[nodeIdx].name,
+		state:           StateMachineRunning,
+		blockingEnabled: true,
 	}
 	// add outgoing connections
 	for _, conn := range emulator.scenario.netConfig.nodes[nodeIdx].outgoingConnections {
@@ -107,17 +109,31 @@ func (n *emulatedNode) Events() <-chan Event {
 	return n.externalEvents
 }
 
-func (n *emulatedNode) NotifyState(updatedState SyncMachineState) {
+func (n *emulatedNode) NotifyState(updatedState SyncMachineState) chan struct{} {
+	var c chan struct{}
 	n.mu.Lock()
-	n.state = updatedState
-	c := make(chan struct{})
-	if updatedState == StateMachineBlocked {
+	if updatedState == StateMachineBlocked && n.blockingEnabled {
+
+		c = make(chan struct{})
+		n.state = updatedState
 		n.blocked = c
+		n.mu.Unlock()
+		<-c
+		n.mu.Lock()
+		n.state = StateMachineRunning
+		n.mu.Unlock()
+		// return a closed channel.
+		return c
 	}
 	n.mu.Unlock()
-	if updatedState == StateMachineBlocked {
-		<-c
-	}
+	// return an open channel
+	return make(chan struct{})
+}
+func (n *emulatedNode) disableBlocking() {
+	n.mu.Lock()
+	n.blockingEnabled = false
+	n.mu.Unlock()
+	n.unblock()
 }
 func (n *emulatedNode) unblock() {
 	n.mu.Lock()
