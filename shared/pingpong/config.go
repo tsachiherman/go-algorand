@@ -22,14 +22,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/algorand/go-algorand/crypto"
+	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/util/codecs"
 )
 
 // ConfigFilename name of configuration file
 const ConfigFilename = "ppconfig.json"
 
-// PpConfig defines configuration structure for
-type PpConfig struct {
+// PpSerializedConfig defines configuration structure used for serializing it from/to disk.
+type PpSerializedConfig struct {
 	SrcAccount      string
 	DelayBetweenTxn time.Duration
 	RandomizeFee    bool
@@ -63,36 +65,45 @@ type PpConfig struct {
 	MaxRuntime      time.Duration
 }
 
+// PpConfig is the in-memory ping pong configuration object, which contain a subset of the
+// on-disk PpSerializedConfig.
+type PpConfig struct {
+	PpSerializedConfig
+	signingAccounts map[basics.Address]*crypto.SignatureSecrets
+}
+
 // DefaultConfig object for Ping Pong
 var DefaultConfig = PpConfig{
-	SrcAccount:      "",
-	DelayBetweenTxn: 100,
-	RandomizeFee:    false,
-	RandomizeAmt:    false,
-	RandomizeDst:    false,
-	MaxFee:          10000,
-	MinFee:          1000,
-	MaxAmt:          1000,
-	TxnPerSec:       200,
-	NumPartAccounts: 10,
-	RunTime:         10 * time.Second,
-	RestTime:        1 * time.Hour, // Long default rest to avoid accidental DoS
-	RefreshTime:     10 * time.Second,
-	MinAccountFunds: 100000,
-	GroupSize:       1,
-	NumAsset:        0,
-	MinAccountAsset: 10000000,
-	NumApp:          0,
-	AppProgOps:      0,
-	AppProgHashes:   0,
-	AppProgHashSize: "sha256",
-	Rekey:           false,
-	MaxRuntime:      0,
+	PpSerializedConfig: PpSerializedConfig{
+		SrcAccount:      "",
+		DelayBetweenTxn: 100,
+		RandomizeFee:    false,
+		RandomizeAmt:    false,
+		RandomizeDst:    false,
+		MaxFee:          10000,
+		MinFee:          1000,
+		MaxAmt:          1000,
+		TxnPerSec:       200,
+		NumPartAccounts: 10,
+		RunTime:         10 * time.Second,
+		RestTime:        1 * time.Hour, // Long default rest to avoid accidental DoS
+		RefreshTime:     10 * time.Second,
+		MinAccountFunds: 100000,
+		GroupSize:       1,
+		NumAsset:        0,
+		MinAccountAsset: 10000000,
+		NumApp:          0,
+		AppProgOps:      0,
+		AppProgHashes:   0,
+		AppProgHashSize: "sha256",
+		Rekey:           false,
+		MaxRuntime:      0,
+	},
 }
 
 // LoadConfigFromFile reads and loads Ping Pong configuration
 func LoadConfigFromFile(file string) (cfg PpConfig, err error) {
-	cfg = DefaultConfig
+	cfg.PpSerializedConfig = DefaultConfig.PpSerializedConfig
 
 	f, err := os.Open(file)
 	if err != nil {

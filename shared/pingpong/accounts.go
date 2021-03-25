@@ -105,7 +105,7 @@ func ensureAccounts(ac libgoal.Client, initCfg PpConfig) (accounts map[string]ui
 			if len(accounts) != int(cfg.NumPartAccounts+1) {
 				fmt.Printf("Not enough accounts - creating %d more\n", int(cfg.NumPartAccounts+1)-len(accounts))
 			}
-			accounts, err = generateAccounts(ac, accounts, cfg.NumPartAccounts, wallet)
+			accounts, err = generateAccounts(ac, accounts, cfg.NumPartAccounts, wallet, cfg)
 			if err != nil {
 				return
 			}
@@ -848,18 +848,30 @@ func takeTopAccounts(allAccounts map[string]uint64, numAccounts uint32, srcAccou
 	return
 }
 
-func generateAccounts(client libgoal.Client, allAccounts map[string]uint64, numAccounts uint32, wallet []byte) (map[string]uint64, error) {
+func generateAccounts(client libgoal.Client, allAccounts map[string]uint64, numAccounts uint32, wallet []byte, cfg PpConfig) (map[string]uint64, error) {
 	// Compute the number of accounts to generate
 	accountsRequired := int(numAccounts+1) - len(allAccounts)
 
+	var addr string
+	var err error
 	for accountsRequired > 0 {
 		accountsRequired--
-		addr, err := client.GenerateAddress(wallet)
-		if err != nil {
-			return allAccounts, err
+		if cfg.signingAccounts != nil {
+			var seed crypto.Seed
+			crypto.RandBytes(seed[:])
+			secrets := crypto.GenerateSignatureSecrets(seed)
+			fullAddr := basics.Address(secrets.SignatureVerifier)
+			addr = fullAddr.String()
+			cfg.signingAccounts[fullAddr] = secrets
+			fmt.Printf("tsachi: generating new account : %v\n", addr)
+		} else {
+			addr, err = client.GenerateAddress(wallet)
+			if err != nil {
+				return allAccounts, err
+			}
 		}
-
 		allAccounts[addr] = 0
+
 	}
 
 	return allAccounts, nil

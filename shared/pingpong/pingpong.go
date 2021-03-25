@@ -22,13 +22,18 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/algorand/go-algorand/config"
 	"github.com/algorand/go-algorand/crypto"
 	v1 "github.com/algorand/go-algorand/daemon/algod/api/spec/v1"
+	algodAcct "github.com/algorand/go-algorand/data/account"
 	"github.com/algorand/go-algorand/data/basics"
 	"github.com/algorand/go-algorand/data/transactions"
+	"github.com/algorand/go-algorand/data/transactions/logic"
 	"github.com/algorand/go-algorand/libgoal"
+	"github.com/algorand/go-algorand/util/db"
 )
 
 // CreatablesInfo has information about created assets, apps and opting in
@@ -112,7 +117,7 @@ func prepareNewAccounts(client libgoal.Client, cfg PpConfig, wallet []byte, acco
 	}
 	// create new accounts for testing
 	newAccounts = make(map[string]uint64)
-	newAccounts, err = generateAccounts(client, newAccounts, cfg.NumPartAccounts-1, wallet)
+	newAccounts, err = generateAccounts(client, newAccounts, cfg.NumPartAccounts-1, wallet, cfg)
 
 	for k := range newAccounts {
 		accounts[k] = newAccounts[k]
@@ -285,6 +290,8 @@ func RunPingPong(ctx context.Context, ac libgoal.Client, accounts map[string]uin
 	//			accounts, cfg, err = PrepareAccounts()
 	//			error = fundAccounts()
 	//  }
+
+	loadSigningAccount(ac, &cfg)
 
 	var runTime time.Duration
 	if cfg.RunTime > 0 {
@@ -647,6 +654,19 @@ func constructTxn(from, to string, fee, amt, aidx uint64, cinfo CreatablesInfo, 
 }
 
 func signTxn(signer string, txn transactions.Transaction, client libgoal.Client, cfg PpConfig) (stxn transactions.SignedTxn, err error) {
+	if signingAccount := cfg.signingAccounts[txn.Sender]; signingAccount != nil && !cfg.Rekey && 1 == 4 {
+		// use the signing account in order to sign the given transaction.
+		if len(cfg.Program) > 0 {
+			progb := logic.Program(cfg.Program)
+			stxn.Txn = txn
+			stxn.Lsig.Logic = cfg.Program
+			stxn.Lsig.Sig = signingAccount.Sign(&progb)
+			stxn.Lsig.Args = cfg.LogicArgs
+		} else {
+			stxn = txn.Sign(signingAccount)
+		}
+		return stxn, nil
+	}
 	// Get wallet handle token
 	var h []byte
 	h, err = client.GetUnencryptedWalletHandle()
@@ -674,4 +694,41 @@ func signTxn(signer string, txn transactions.Transaction, client libgoal.Client,
 		stxn, err = client.SignTransactionWithWallet(h, nil, txn)
 	}
 	return
+}
+
+func loadSigningAccount(ac libgoal.Client, cfg *PpConfig) {
+	filepath.Walk(ac.DataDir(), func(path string, f os.FileInfo, errIn error) error {
+		if errIn != nil {
+			return errIn
+		}
+		fmt.Printf("tsachi : loadSigningAccount %v\n", path)
+		if f.IsDir() {
+			return nil
+		}
+		if !config.IsRootKeyFilename(path) {
+			return nil
+		}
+
+		// Fetch a handle to this database
+		handle, err := db.MakeErasableAccessor(path)
+		if err != nil {
+			// Couldn't open it, skip it
+			return nil
+		}
+
+		// Fetch an account.Participation from the database
+		root, err := algodAcct.RestoreRoot(handle)
+		handle.Close()
+		if err != nil {
+			// Couldn't read it, skip it
+			return nil
+		}
+		if cfg.signingAccounts == nil {
+			cfg.signingAccounts = make(map[basics.Address]*crypto.SignatureSecrets)
+		}
+		addr := basics.Address(root.Secrets().SignatureVerifier)
+		cfg.signingAccounts[addr] = root.Secrets()
+		fmt.Printf("tsachi : loadSigningAccount %v loaded successfully\n", path)
+		return filepath.SkipDir
+	})
 }

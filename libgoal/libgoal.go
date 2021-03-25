@@ -365,6 +365,7 @@ func (c *Client) DeleteAccount(walletHandle []byte, walletPassword []byte, addr 
 	}
 
 	_, err = kmd.DeleteKey(walletHandle, walletPassword, addr)
+
 	return err
 }
 
