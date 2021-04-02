@@ -36,7 +36,9 @@ import (
 
 func TestCompactCerts(t *testing.T) {
 	t.Parallel()
-	r := require.New(fixtures.SynchronizedTest(t))
+	syncTest := fixtures.SynchronizedTest(t)
+
+	r := require.New(syncTest)
 
 	configurableConsensus := make(config.ConsensusProtocols)
 	consensusVersion := protocol.ConsensusVersion("test-fast-compactcert")
@@ -50,7 +52,8 @@ func TestCompactCerts(t *testing.T) {
 
 	var fixture fixtures.RestClientFixture
 	fixture.SetConsensus(configurableConsensus)
-	fixture.Setup(t, filepath.Join("nettemplates", "CompactCert.json"))
+	fixture.Setup(syncTest, filepath.Join("nettemplates", "CompactCert.json"))
+	defer fixture.SetTestContext(syncTest)()
 	defer fixture.Shutdown()
 
 	restClient, err := fixture.NC.AlgodClient()
