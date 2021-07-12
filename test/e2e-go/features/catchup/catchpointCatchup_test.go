@@ -169,6 +169,7 @@ func TestBasicCatchpointCatchup(t *testing.T) {
 	a.NoError(err)
 
 	wp, err := fixtures.MakeWebProxy(primaryListeningAddress, func(response http.ResponseWriter, request *http.Request, next http.HandlerFunc) {
+		//fmt.Printf("proxy received a request for %v [%v]\n", request.URL.String(), time.Now())
 		// prevent requests for block #2 to go through.
 		if request.URL.String() == "/v1/test-v1/block/2" {
 			response.WriteHeader(http.StatusBadRequest)

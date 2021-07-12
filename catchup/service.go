@@ -219,7 +219,7 @@ func (s *Service) fetchAndWrite(r basics.Round, prevFetchCompleteChan chan bool,
 		block, cert, blockDownloadDuration, err := s.innerFetch(r, peer)
 
 		if err != nil {
-			s.log.Debugf("fetchAndWrite(%v): Could not fetch: %v (attempt %d)", r, err, i)
+			s.log.Infof("fetchAndWrite(%v): Could not fetch: %v (attempt %d)", r, err, i)
 			peerSelector.rankPeer(psp, peerRankDownloadFailed)
 			// we've just failed to retrieve a block; wait until the previous block is fetched before trying again
 			// to avoid the usecase where the first block doesn't exists and we're making many requests down the chain
